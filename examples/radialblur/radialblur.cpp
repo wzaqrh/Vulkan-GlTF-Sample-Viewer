@@ -42,20 +42,18 @@ public:
 	VkDescriptorSet gradientImageDescriptorSet;
 
 	struct Pipelines {
-		VkPipeline radialBlur;
-		VkPipeline colorPass;
-		VkPipeline phongPass;
+		VkPipeline postprocess;
+		VkPipeline colorOnly;
+		VkPipeline phongLighting;
 		VkPipeline offscreenDisplay;
 	} pipelines;
 
-	struct PipelineLayouts {
-		VkPipelineLayout sceneRendering;
-		VkPipelineLayout offscreenImageGeneration;
-	} pipelineLayouts;
+	// All pipelines share the same layouit
+	VkPipelineLayout pipelineLayout;
 
 	struct DescriptorSetLayouts {
 		VkDescriptorSetLayout uniformbuffers;
-		VkDescriptorSetLayout offscreenImage;
+		VkDescriptorSetLayout images;
 	} descriptorSetLayouts;
 
 	// Framebuffer for offscreen rendering
@@ -95,14 +93,13 @@ public:
 			vkDestroyRenderPass(device, offscreenPass.renderPass, nullptr);
 			vkDestroySampler(device, offscreenPass.sampler, nullptr);
 			vkDestroyFramebuffer(device, offscreenPass.frameBuffer, nullptr);
-			vkDestroyPipeline(device, pipelines.radialBlur, nullptr);
-			vkDestroyPipeline(device, pipelines.phongPass, nullptr);
-			vkDestroyPipeline(device, pipelines.colorPass, nullptr);
+			vkDestroyPipeline(device, pipelines.postprocess, nullptr);
+			vkDestroyPipeline(device, pipelines.colorOnly, nullptr);
+			vkDestroyPipeline(device, pipelines.phongLighting, nullptr);
 			vkDestroyPipeline(device, pipelines.offscreenDisplay, nullptr);
-			vkDestroyPipelineLayout(device, pipelineLayouts.sceneRendering, nullptr);
-			vkDestroyPipelineLayout(device, pipelineLayouts.offscreenImageGeneration, nullptr);
-			vkDestroyDescriptorSetLayout(device, descriptorSetLayouts.offscreenImage, nullptr);
+			vkDestroyPipelineLayout(device, pipelineLayout, nullptr);
 			vkDestroyDescriptorSetLayout(device, descriptorSetLayouts.uniformbuffers, nullptr);
+			vkDestroyDescriptorSetLayout(device, descriptorSetLayouts.images, nullptr);
 			gradient.destroy();
 			for (FrameObjects& frame : frameObjects) {
 				frame.uniformBuffer.destroy();
@@ -303,10 +300,10 @@ public:
 		descriptorSetLayoutCI = vks::initializers::descriptorSetLayoutCreateInfo(setLayoutBinding);
 		VK_CHECK_RESULT(vkCreateDescriptorSetLayout(device, &descriptorSetLayoutCI, nullptr, &descriptorSetLayouts.uniformbuffers));
 
-		// Layout for the offscreen image
+		// Layout for static images (both offscreen and gradient)
 		setLayoutBinding = vks::initializers::descriptorSetLayoutBinding(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_SHADER_STAGE_FRAGMENT_BIT, 0);
 		descriptorSetLayoutCI = vks::initializers::descriptorSetLayoutCreateInfo(setLayoutBinding);
-		VK_CHECK_RESULT(vkCreateDescriptorSetLayout(device, &descriptorSetLayoutCI, nullptr, &descriptorSetLayouts.offscreenImage));
+		VK_CHECK_RESULT(vkCreateDescriptorSetLayout(device, &descriptorSetLayoutCI, nullptr, &descriptorSetLayouts.images));
 
 		// Sets
 		// Per-frame for dynamic uniform buffers
@@ -318,7 +315,7 @@ public:
 		}
 
 		// Global sets for the images
-		VkDescriptorSetAllocateInfo allocInfo = vks::initializers::descriptorSetAllocateInfo(descriptorPool, &descriptorSetLayouts.offscreenImage, 1);
+		VkDescriptorSetAllocateInfo allocInfo = vks::initializers::descriptorSetAllocateInfo(descriptorPool, &descriptorSetLayouts.images, 1);
 		// Offscreen image
 		VkDescriptorImageInfo mirrorImageDescriptor = vks::initializers::descriptorImageInfo(offscreenPass.sampler, offscreenPass.color.view, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
 		VK_CHECK_RESULT(vkAllocateDescriptorSets(device, &allocInfo, &offscreenImageDescriptorSet));
@@ -332,20 +329,12 @@ public:
 
 	void createPipelines()
 	{
-		// Layouts
-		// @todo: rework, esp. offscreenImage (combine, rename, or add third layout for input image?)
+		// Layouts is shared by all pipelines
 		VkPipelineLayoutCreateInfo pipelineLayoutCI = vks::initializers::pipelineLayoutCreateInfo();
-		// Layout for rendering the scene with and without blur
-		std::vector<VkDescriptorSetLayout> setLayouts = { descriptorSetLayouts.uniformbuffers, descriptorSetLayouts.offscreenImage };
+		std::vector<VkDescriptorSetLayout> setLayouts = { descriptorSetLayouts.uniformbuffers, descriptorSetLayouts.images };
 		pipelineLayoutCI.pSetLayouts = setLayouts.data();
 		pipelineLayoutCI.setLayoutCount = 2;
-		VK_CHECK_RESULT(vkCreatePipelineLayout(device, &pipelineLayoutCI, nullptr, &pipelineLayouts.sceneRendering));
-		// Layout for passing uniform buffers to the mirror image generation pass
-		setLayouts = { descriptorSetLayouts.uniformbuffers, descriptorSetLayouts.offscreenImage };
-		pipelineLayoutCI.pSetLayouts = setLayouts.data();
-		pipelineLayoutCI.setLayoutCount = 2;
-		VK_CHECK_RESULT(vkCreatePipelineLayout(device, &pipelineLayoutCI, nullptr, &pipelineLayouts.offscreenImageGeneration));
-		// @todo: post process layout
+		VK_CHECK_RESULT(vkCreatePipelineLayout(device, &pipelineLayoutCI, nullptr, &pipelineLayout));
 
 		VkPipelineInputAssemblyStateCreateInfo inputAssemblyStateCI = vks::initializers::pipelineInputAssemblyStateCreateInfo(VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST, 0, VK_FALSE);
 		VkPipelineRasterizationStateCreateInfo rasterizationStateCI = vks::initializers::pipelineRasterizationStateCreateInfo(VK_POLYGON_MODE_FILL, VK_CULL_MODE_NONE, VK_FRONT_FACE_COUNTER_CLOCKWISE, 0);
@@ -356,11 +345,11 @@ public:
 		VkPipelineMultisampleStateCreateInfo multisampleStateCI = vks::initializers::pipelineMultisampleStateCreateInfo(VK_SAMPLE_COUNT_1_BIT, 0);
 		std::vector<VkDynamicState> dynamicStateEnables = { VK_DYNAMIC_STATE_VIEWPORT, VK_DYNAMIC_STATE_SCISSOR };
 		VkPipelineDynamicStateCreateInfo dynamicStateCI = vks::initializers::pipelineDynamicStateCreateInfo(dynamicStateEnables);
-
-		std::array<VkPipelineShaderStageCreateInfo, 2> shaderStages;
+		std::array<VkPipelineShaderStageCreateInfo, 2> shaderStages{};
 
 		VkGraphicsPipelineCreateInfo pipelineCI = vks::initializers::pipelineCreateInfo();
 		pipelineCI.renderPass = renderPass;
+		pipelineCI.layout = pipelineLayout;
 		pipelineCI.pInputAssemblyState = &inputAssemblyStateCI;
 		pipelineCI.pRasterizationState = &rasterizationStateCI;
 		pipelineCI.pColorBlendState = &colorBlendStateCI;
@@ -371,14 +360,13 @@ public:
 		pipelineCI.stageCount = static_cast<uint32_t>(shaderStages.size());
 		pipelineCI.pStages = shaderStages.data();
 
-		// Radial blur pipeline
+		// Post process radial blur pipeline
 		shaderStages[0] = loadShader(getShadersPath() + "radialblur/radialblur.vert.spv", VK_SHADER_STAGE_VERTEX_BIT);
 		shaderStages[1] = loadShader(getShadersPath() + "radialblur/radialblur.frag.spv", VK_SHADER_STAGE_FRAGMENT_BIT);
-		// Empty vertex input state
+		// The vertex shader of this pipeline emits vertices for a screen covering triangle, so we use an empty vertex input state
 		VkPipelineVertexInputStateCreateInfo emptyInputState = vks::initializers::pipelineVertexInputStateCreateInfo();
 		pipelineCI.pVertexInputState = &emptyInputState;
-		pipelineCI.layout = pipelineLayouts.sceneRendering;
-		// Additive blending
+		// Use additive blending
 		blendAttachmentState.colorWriteMask = 0xF;
 		blendAttachmentState.blendEnable = VK_TRUE;
 		blendAttachmentState.colorBlendOp = VK_BLEND_OP_ADD;
@@ -387,27 +375,25 @@ public:
 		blendAttachmentState.alphaBlendOp = VK_BLEND_OP_ADD;
 		blendAttachmentState.srcAlphaBlendFactor = VK_BLEND_FACTOR_SRC_ALPHA;
 		blendAttachmentState.dstAlphaBlendFactor = VK_BLEND_FACTOR_DST_ALPHA;
-		VK_CHECK_RESULT(vkCreateGraphicsPipelines(device, pipelineCache, 1, &pipelineCI, nullptr, &pipelines.radialBlur));
+		VK_CHECK_RESULT(vkCreateGraphicsPipelines(device, pipelineCache, 1, &pipelineCI, nullptr, &pipelines.postprocess));
 
-		// No blending (for debug display)
+		// Offscreen attachment debug display pipeline (no blending)
 		blendAttachmentState.blendEnable = VK_FALSE;
 		VK_CHECK_RESULT(vkCreateGraphicsPipelines(device, pipelineCache, 1, &pipelineCI, nullptr, &pipelines.offscreenDisplay));
 
-		// Phong pass
-		pipelineCI.layout = pipelineLayouts.sceneRendering;
+		// Model with applied lighting pipeline
 		shaderStages[0] = loadShader(getShadersPath() + "radialblur/phongpass.vert.spv", VK_SHADER_STAGE_VERTEX_BIT);
 		shaderStages[1] = loadShader(getShadersPath() + "radialblur/phongpass.frag.spv", VK_SHADER_STAGE_FRAGMENT_BIT);
 		blendAttachmentState.blendEnable = VK_FALSE;
 		depthStencilStateCI.depthWriteEnable = VK_TRUE;
 		pipelineCI.pVertexInputState = vkglTF::Vertex::getPipelineVertexInputState({ vkglTF::VertexComponent::Position, vkglTF::VertexComponent::UV, vkglTF::VertexComponent::Color, vkglTF::VertexComponent::Normal });;
-		VK_CHECK_RESULT(vkCreateGraphicsPipelines(device, pipelineCache, 1, &pipelineCI, nullptr, &pipelines.phongPass));
+		VK_CHECK_RESULT(vkCreateGraphicsPipelines(device, pipelineCache, 1, &pipelineCI, nullptr, &pipelines.phongLighting));
 
-		// Color only pass (offscreen blur base)
-		pipelineCI.layout = pipelineLayouts.offscreenImageGeneration;
+		// Offscreen color only attachment generation pipeline
 		shaderStages[0] = loadShader(getShadersPath() + "radialblur/colorpass.vert.spv", VK_SHADER_STAGE_VERTEX_BIT);
 		shaderStages[1] = loadShader(getShadersPath() + "radialblur/colorpass.frag.spv", VK_SHADER_STAGE_FRAGMENT_BIT);
 		pipelineCI.renderPass = offscreenPass.renderPass;
-		VK_CHECK_RESULT(vkCreateGraphicsPipelines(device, pipelineCache, 1, &pipelineCI, nullptr, &pipelines.colorPass));
+		VK_CHECK_RESULT(vkCreateGraphicsPipelines(device, pipelineCache, 1, &pipelineCI, nullptr, &pipelines.colorOnly));
 	}
 
 	void prepare()
@@ -467,9 +453,9 @@ public:
 			vkCmdSetViewport(commandBuffer, 0, 1, &viewport);
 			vkCmdSetScissor(commandBuffer, 0, 1, &scissor);
 
-			vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayouts.offscreenImageGeneration, 0, 1, &currentFrame.descriptorSet, 0, nullptr);
-			vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayouts.offscreenImageGeneration, 1, 1, &gradientImageDescriptorSet, 0, nullptr);
-			vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelines.colorPass);
+			vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout, 0, 1, &currentFrame.descriptorSet, 0, nullptr);
+			vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout, 1, 1, &gradientImageDescriptorSet, 0, nullptr);
+			vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelines.colorOnly);
 			scene.draw(commandBuffer);
 
 			vkCmdEndRenderPass(commandBuffer);
@@ -486,14 +472,14 @@ public:
 			vkCmdSetScissor(commandBuffer, 0, 1, &renderArea);
 
 			// 3D scene
-			vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayouts.sceneRendering, 0, 1, &currentFrame.descriptorSet, 0, nullptr);
-			vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelines.phongPass);
+			vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout, 0, 1, &currentFrame.descriptorSet, 0, nullptr);
+			vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelines.phongLighting);
 			scene.draw(commandBuffer);
 
 			// Render the full screen blur using a fullscreen triangle
 			if (blur) {
-				vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayouts.sceneRendering, 1, 1, &offscreenImageDescriptorSet, 0, nullptr);
-				vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, (displayTexture) ? pipelines.offscreenDisplay : pipelines.radialBlur);
+				vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout, 1, 1, &offscreenImageDescriptorSet, 0, nullptr);
+				vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, (displayTexture) ? pipelines.offscreenDisplay : pipelines.postprocess);
 				vkCmdDraw(commandBuffer, 3, 1, 0, 0);
 			}
 
