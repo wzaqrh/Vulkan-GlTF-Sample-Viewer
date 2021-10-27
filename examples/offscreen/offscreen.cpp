@@ -389,7 +389,7 @@ public:
 		rasterizationState.cullMode = VK_CULL_MODE_BACK_BIT;
 
 		// Phong shading pipelines for scene rendering
-		// Final scene renderin pipeline
+		// Final scene rendering pipeline
 		shaderStages[0] = loadShader(getShadersPath() + "offscreen/phong.vert.spv", VK_SHADER_STAGE_VERTEX_BIT);
 		shaderStages[1] = loadShader(getShadersPath() + "offscreen/phong.frag.spv", VK_SHADER_STAGE_FRAGMENT_BIT);
 		VK_CHECK_RESULT(vkCreateGraphicsPipelines(device, pipelineCache, 1, &pipelineCI, nullptr, &pipelines.shaded));
@@ -441,13 +441,13 @@ public:
 		const VkCommandBufferBeginInfo commandBufferBeginInfo = getCommandBufferBeginInfo();
 		VK_CHECK_RESULT(vkBeginCommandBuffer(commandBuffer, &commandBufferBeginInfo));
 
-		// First render pass: Render the mirrired scene to the offscreen attachment
+		// First render pass: Render the mirrored scene to the offscreen attachment
 		{
 			VkClearValue clearValues[2];
 			clearValues[0].color = { { 0.1f, 0.1f, 0.1f, 0.0f } };
 			clearValues[1].depthStencil = { 1.0f, 0 };
-			VkViewport viewport = vks::initializers::viewport((float)mirrorImageExtent.width, (float)mirrorImageExtent.height, 0.0f, 1.0f);
-			VkRect2D scissor = vks::initializers::rect2D(mirrorImageExtent.width, mirrorImageExtent.height, 0, 0);
+			VkViewport viewport = vks::initializers::viewport(mirrorImageExtent, 0.0f, 1.0f);
+			VkRect2D scissor = vks::initializers::rect2D(mirrorImageExtent);
 
 			VkRenderPassBeginInfo renderPassBeginInfo = vks::initializers::renderPassBeginInfo();
 			renderPassBeginInfo.renderPass = offscreenPass.renderPass;
@@ -519,6 +519,7 @@ public:
 	{
 		if (overlay->header("Settings")) {
 			if (overlay->checkBox("Display render target", &debugDisplay)) {
+				// @todo: remove
 				buildCommandBuffers();
 			}
 		}
