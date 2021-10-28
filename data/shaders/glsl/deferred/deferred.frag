@@ -1,8 +1,8 @@
 #version 450
 
-layout (binding = 1) uniform sampler2D samplerposition;
-layout (binding = 2) uniform sampler2D samplerNormal;
-layout (binding = 3) uniform sampler2D samplerAlbedo;
+layout (set = 1, binding = 0) uniform sampler2D samplerposition;
+layout (set = 1, binding = 1) uniform sampler2D samplerNormal;
+layout (set = 1, binding = 2) uniform sampler2D samplerAlbedo;
 
 layout (location = 0) in vec2 inUV;
 
@@ -14,8 +14,12 @@ struct Light {
 	float radius;
 };
 
-layout (binding = 4) uniform UBO 
+layout (set = 0, binding = 0) uniform UBO 
 {
+	mat4 projection;
+	mat4 model;
+	mat4 view;
+	vec4 instancePos[3];
 	Light lights[6];
 	vec4 viewPos;
 	int displayDebugTarget;

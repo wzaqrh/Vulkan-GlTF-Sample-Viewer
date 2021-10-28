@@ -6,12 +6,21 @@ layout (location = 2) in vec3 inColor;
 layout (location = 3) in vec3 inNormal;
 layout (location = 4) in vec3 inTangent;
 
+struct Light {
+	vec4 position;
+	vec3 color;
+	float radius;
+};
+
 layout (binding = 0) uniform UBO 
 {
 	mat4 projection;
 	mat4 model;
 	mat4 view;
 	vec4 instancePos[3];
+	Light lights[6];
+	vec4 viewPos;
+	int displayDebugTarget;
 } ubo;
 
 layout (location = 0) out vec3 outNormal;
