@@ -1,10 +1,14 @@
 // Copyright 2020 Google LLC
+// Copyright 2021 Sascha Willems
 
-Texture2D textureColor : register(t1);
-SamplerState samplerColor : register(s1);
+Texture2D textureColor : register(t0, space1);
+SamplerState samplerColor : register(s0, space1);
 
 struct UBO
 {
+	float4x4 projection;
+	float4x4 model;
+	float gradientPos;
 	float radialBlurScale;
 	float radialBlurStrength;
 	float2 radialOrigin;

@@ -1,7 +1,8 @@
 // Copyright 2020 Google LLC
+// Copyright 2021 Sascha Willems
 
-Texture2D textureGradientRamp : register(t1);
-SamplerState samplerGradientRamp : register(s1);
+Texture2D textureGradientRamp : register(t0, space1);
+SamplerState samplerGradientRamp : register(s0, space1);
 
 struct VSOutput
 {

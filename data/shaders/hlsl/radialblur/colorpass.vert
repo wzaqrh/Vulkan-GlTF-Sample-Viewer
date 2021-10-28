@@ -11,6 +11,9 @@ struct UBO
 	float4x4 projection;
 	float4x4 model;
 	float gradientPos;
+	float radialBlurScale;
+	float radialBlurStrength;
+	float2 radialOrigin;
 };
 
 cbuffer ubo : register(b0) { UBO ubo; }
