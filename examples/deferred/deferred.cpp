@@ -7,7 +7,11 @@
  */
 
 /*
- * @todo: comment
+ * This sample shows how to render a scene with multiple lights using a deferred setup
+ * In a deferred renderer lighting calculations are done in screenspace, so lighting is only calculated for visible fragments
+ * This is done in two passes:
+ * - The first offscreen pass renders different components (albedo, normals, positions, specular) to multiple render targets ("G-Buffer")
+ * - The second composition pass uses these render targets as inputs for the deferred lighting calculations (see deferred.frag)
  */
 
 #include "vulkanexamplebase.h"
@@ -22,14 +26,11 @@ public:
 
 	int32_t debugDisplayTarget = 0;
 
-	// @todo: naming
-	struct Material {
-		vks::Texture2D colorMap;
-		vks::Texture2D normalMap;
-	};
-	struct Textures{
-		Material model;
-		Material floor;
+	struct Textures {
+		struct TextureMap {
+			vks::Texture2D color;
+			vks::Texture2D normal;
+		} model, floor;
 	} textures;
 
 	struct Models {
@@ -49,8 +50,10 @@ public:
 		glm::mat4 view;
 		// Used to place the objects in the scane
 		glm::vec4 instancePos[3];
+		// Dynamic lights
 		Light lights[6];
 		glm::vec4 viewPos;
+		// Debug display toggle (if > 0)
 		int debugDisplayTarget = 0;
 	} uniformData;
 
@@ -59,15 +62,16 @@ public:
 		VkDescriptorSet descriptorSet;
 	};
 	std::vector<FrameObjects> frameObjects;
-	// The descriptors for the images and SSAO kernel are static, and not required to be per-frame @todo
-	VkDescriptorSet rendertargetsDescriptorSet;
-	VkDescriptorSet modelTexturesDescriptorSet;
-	VkDescriptorSet floorTexturesDescriptorSet;
+	// The descriptors for the render targets and textures are static, and not required to be per-frame
+	struct StaticDescriptorSets {
+		VkDescriptorSet gBuffer;
+		VkDescriptorSet modelTextures;
+		VkDescriptorSet floorTextures;
+	} staticDescriptorSets;
 
 	struct DescriptorSetLayouts {
 		VkDescriptorSetLayout uniformbuffers;
-		VkDescriptorSetLayout rendertargets;
-		VkDescriptorSetLayout textures;
+		VkDescriptorSetLayout images;
 	} descriptorSetLayouts;
 
 	struct Pipelines {
@@ -76,18 +80,23 @@ public:
 	} pipelines;
 	VkPipelineLayout pipelineLayout;
 
-	// Framebuffer for offscreen rendering
 	struct FrameBufferAttachment {
 		VkImage image;
-		VkDeviceMemory mem;
+		VkDeviceMemory memory;
 		VkImageView view;
 		VkFormat format;
+		void destroy(VkDevice device) {
+			vkDestroyImage(device, image, nullptr);
+			vkDestroyImageView(device, view, nullptr);
+			vkFreeMemory(device, memory, nullptr);
+		}
 	};
-	struct FrameBuffer {
+	// Holds the attachments for the components of the G-Buffer
+	struct gBufferPass {
 		VkFramebuffer frameBuffer;
 		FrameBufferAttachment position, normal, albedo, depth;
 		VkRenderPass renderPass;
-	} offScreenFrameBuf;
+	} gBufferPass;
 
 	// One sampler for the frame buffer color attachments
 	VkSampler colorSampler;
@@ -110,30 +119,21 @@ public:
 	{
 		if (device) {
 			vkDestroySampler(device, colorSampler, nullptr);
-			// Frame buffer
-			// Color attachments
-			vkDestroyImageView(device, offScreenFrameBuf.position.view, nullptr);
-			vkDestroyImage(device, offScreenFrameBuf.position.image, nullptr);
-			vkFreeMemory(device, offScreenFrameBuf.position.mem, nullptr);
-			vkDestroyImageView(device, offScreenFrameBuf.normal.view, nullptr);
-			vkDestroyImage(device, offScreenFrameBuf.normal.image, nullptr);
-			vkFreeMemory(device, offScreenFrameBuf.normal.mem, nullptr);
-			vkDestroyImageView(device, offScreenFrameBuf.albedo.view, nullptr);
-			vkDestroyImage(device, offScreenFrameBuf.albedo.image, nullptr);
-			vkFreeMemory(device, offScreenFrameBuf.albedo.mem, nullptr);
-			// Depth attachment
-			vkDestroyImageView(device, offScreenFrameBuf.depth.view, nullptr);
-			vkDestroyImage(device, offScreenFrameBuf.depth.image, nullptr);
-			vkFreeMemory(device, offScreenFrameBuf.depth.mem, nullptr);
-			vkDestroyFramebuffer(device, offScreenFrameBuf.frameBuffer, nullptr);
+			gBufferPass.albedo.destroy(device);
+			gBufferPass.depth.destroy(device);
+			gBufferPass.normal.destroy(device);
+			gBufferPass.position.destroy(device);
+			vkDestroyFramebuffer(device, gBufferPass.frameBuffer, nullptr);
 			vkDestroyPipeline(device, pipelines.composition, nullptr);
 			vkDestroyPipeline(device, pipelines.offscreen, nullptr);
 			vkDestroyPipelineLayout(device, pipelineLayout, nullptr);
-			vkDestroyRenderPass(device, offScreenFrameBuf.renderPass, nullptr);
-			textures.model.colorMap.destroy();
-			textures.model.normalMap.destroy();
-			textures.floor.colorMap.destroy();
-			textures.floor.normalMap.destroy();
+			vkDestroyRenderPass(device, gBufferPass.renderPass, nullptr);
+			vkDestroyDescriptorSetLayout(device, descriptorSetLayouts.images, nullptr);
+			vkDestroyDescriptorSetLayout(device, descriptorSetLayouts.uniformbuffers, nullptr);
+			textures.model.color.destroy();
+			textures.model.normal.destroy();
+			textures.floor.color.destroy();
+			textures.floor.normal.destroy();
 			for (FrameObjects& frame : frameObjects) {
 				frame.uniformBuffer.destroy();
 				destroyBaseFrameObjects(frame);
@@ -190,8 +190,8 @@ public:
 		vkGetImageMemoryRequirements(device, attachment->image, &memReqs);
 		memAlloc.allocationSize = memReqs.size;
 		memAlloc.memoryTypeIndex = vulkanDevice->getMemoryType(memReqs.memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
-		VK_CHECK_RESULT(vkAllocateMemory(device, &memAlloc, nullptr, &attachment->mem));
-		VK_CHECK_RESULT(vkBindImageMemory(device, attachment->image, attachment->mem, 0));
+		VK_CHECK_RESULT(vkAllocateMemory(device, &memAlloc, nullptr, &attachment->memory));
+		VK_CHECK_RESULT(vkBindImageMemory(device, attachment->image, attachment->memory, 0));
 
 		VkImageViewCreateInfo imageView = vks::initializers::imageViewCreateInfo();
 		imageView.viewType = VK_IMAGE_VIEW_TYPE_2D;
@@ -206,88 +206,77 @@ public:
 		VK_CHECK_RESULT(vkCreateImageView(device, &imageView, nullptr, &attachment->view));
 	}
 
-	// Prepare a new framebuffer and attachments for offscreen rendering (G-Buffer)
-	void prepareOffscreenFramebuffer()
+	// Prepares attachments, framebuffer and render pass for the offscreen G-Buffer creation
+	void createGBuffer()
 	{
-		// Color attachments
-
+		// The G-Buffer in this sample contains four attachments
 		// (World space) Positions
-		createAttachment(VK_FORMAT_R16G16B16A16_SFLOAT, VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT, &offScreenFrameBuf.position);
+		createAttachment(VK_FORMAT_R16G16B16A16_SFLOAT, VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT, &gBufferPass.position);
 		// (World space) Normals
-		createAttachment(VK_FORMAT_R16G16B16A16_SFLOAT, VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT, &offScreenFrameBuf.normal);
-		// Albedo (color)
-		createAttachment(VK_FORMAT_R8G8B8A8_UNORM, VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT, &offScreenFrameBuf.albedo);
-
-		// Depth attachment
-		// Find a suitable depth format
-		VkFormat attDepthFormat;
-		VkBool32 validDepthFormat = vks::tools::getSupportedDepthFormat(physicalDevice, &attDepthFormat);
+		createAttachment(VK_FORMAT_R16G16B16A16_SFLOAT, VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT, &gBufferPass.normal);
+		// Albedo
+		createAttachment(VK_FORMAT_R8G8B8A8_UNORM, VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT, &gBufferPass.albedo);
+		// Depth
+		VkFormat depthFormat;
+		VkBool32 validDepthFormat = vks::tools::getSupportedDepthFormat(physicalDevice, &depthFormat);
 		assert(validDepthFormat);
-		createAttachment(attDepthFormat, VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT, &offScreenFrameBuf.depth);
+		createAttachment(depthFormat, VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT, &gBufferPass.depth);
 
-		// Set up separate renderpass with references to the color and depth attachments
-		std::array<VkAttachmentDescription, 4> attachmentDescs = {};
-
-		// Init attachment properties
-		for (uint32_t i = 0; i < 4; ++i)
-		{
-			attachmentDescs[i].samples = VK_SAMPLE_COUNT_1_BIT;
-			attachmentDescs[i].loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
-			attachmentDescs[i].storeOp = VK_ATTACHMENT_STORE_OP_STORE;
-			attachmentDescs[i].stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
-			attachmentDescs[i].stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
-			if (i == 3)
-			{
-				attachmentDescs[i].initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-				attachmentDescs[i].finalLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
-			}
-			else
-			{
-				attachmentDescs[i].initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-				attachmentDescs[i].finalLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+		// Set up a renderpass with references to the color and depth attachments that's used to fill the attachments
+		std::array<VkAttachmentDescription, 4> attachmentDescriptions = {};
+		attachmentDescriptions[0].format = gBufferPass.position.format;
+		attachmentDescriptions[1].format = gBufferPass.normal.format;
+		attachmentDescriptions[2].format = gBufferPass.albedo.format;
+		attachmentDescriptions[3].format = gBufferPass.depth.format;
+		for (uint32_t i = 0; i < 4; ++i) {
+			attachmentDescriptions[i].samples = VK_SAMPLE_COUNT_1_BIT;
+			attachmentDescriptions[i].loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+			attachmentDescriptions[i].storeOp = VK_ATTACHMENT_STORE_OP_STORE;
+			attachmentDescriptions[i].stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+			attachmentDescriptions[i].stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+			if (attachmentDescriptions[i].format == depthFormat) {
+				// Layout for the depth attachment
+				attachmentDescriptions[i].initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+				attachmentDescriptions[i].finalLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+			} else{
+				// Layouts for the color attachment, which are read from the shaders in the composition pass
+				attachmentDescriptions[i].initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+				attachmentDescriptions[i].finalLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
 			}
 		}
-
-		// Formats
-		attachmentDescs[0].format = offScreenFrameBuf.position.format;
-		attachmentDescs[1].format = offScreenFrameBuf.normal.format;
-		attachmentDescs[2].format = offScreenFrameBuf.albedo.format;
-		attachmentDescs[3].format = offScreenFrameBuf.depth.format;
 
 		std::vector<VkAttachmentReference> colorReferences;
 		colorReferences.push_back({ 0, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL });
 		colorReferences.push_back({ 1, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL });
 		colorReferences.push_back({ 2, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL });
-
 		VkAttachmentReference depthReference = {};
 		depthReference.attachment = 3;
 		depthReference.layout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
-
 		VkSubpassDescription subpass = {};
 		subpass.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
 		subpass.pColorAttachments = colorReferences.data();
 		subpass.colorAttachmentCount = static_cast<uint32_t>(colorReferences.size());
 		subpass.pDepthStencilAttachment = &depthReference;
 
-		// Use subpass dependencies for attachment layout transitions
+		// We use se subpass dependencies for attachment layout transitions
 		std::array<VkSubpassDependency, 3> dependencies{};
 
-		// @todo: document
+		// These dependencies ensure that writes to both color and depth attachments have finished before we start writing to them again
 		dependencies[0].srcSubpass = VK_SUBPASS_EXTERNAL;
 		dependencies[0].dstSubpass = 0;
 		dependencies[0].srcStageMask = VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT | VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT;
 		dependencies[0].dstStageMask = VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT | VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT;
-		dependencies[0].srcAccessMask = VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
-		dependencies[0].dstAccessMask = VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT | VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_READ_BIT;
+		dependencies[0].srcAccessMask = 0;
+		dependencies[0].dstAccessMask = VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
 
 		dependencies[1].srcSubpass = VK_SUBPASS_EXTERNAL;
 		dependencies[1].dstSubpass = 0;
 		dependencies[1].srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
 		dependencies[1].dstStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
 		dependencies[1].srcAccessMask = 0;
-		dependencies[1].dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT | VK_ACCESS_COLOR_ATTACHMENT_READ_BIT;
+		dependencies[1].dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT ;
 
-		// @todo: document
+		// This dependency ensures that writes to the color attachments have finished before the second render pass starts reading from them
 		dependencies[2].srcSubpass = 0;
 		dependencies[2].dstSubpass = VK_SUBPASS_EXTERNAL;
 		dependencies[2].srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
@@ -295,48 +284,44 @@ public:
 		dependencies[2].srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
 		dependencies[2].dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
 
-		VkRenderPassCreateInfo renderPassInfo = {};
-		renderPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO;
-		renderPassInfo.pAttachments = attachmentDescs.data();
-		renderPassInfo.attachmentCount = static_cast<uint32_t>(attachmentDescs.size());
-		renderPassInfo.subpassCount = 1;
-		renderPassInfo.pSubpasses = &subpass;
-		renderPassInfo.dependencyCount = static_cast<uint32_t>(dependencies.size());
-		renderPassInfo.pDependencies = dependencies.data();
-
-		VK_CHECK_RESULT(vkCreateRenderPass(device, &renderPassInfo, nullptr, &offScreenFrameBuf.renderPass));
+		VkRenderPassCreateInfo renderPassCI = vks::initializers::renderPassCreateInfo();
+		renderPassCI.sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO;
+		renderPassCI.pAttachments = attachmentDescriptions.data();
+		renderPassCI.attachmentCount = static_cast<uint32_t>(attachmentDescriptions.size());
+		renderPassCI.subpassCount = 1;
+		renderPassCI.pSubpasses = &subpass;
+		renderPassCI.dependencyCount = static_cast<uint32_t>(dependencies.size());
+		renderPassCI.pDependencies = dependencies.data();
+		VK_CHECK_RESULT(vkCreateRenderPass(device, &renderPassCI, nullptr, &gBufferPass.renderPass));
 
 		std::array<VkImageView,4> attachments;
-		attachments[0] = offScreenFrameBuf.position.view;
-		attachments[1] = offScreenFrameBuf.normal.view;
-		attachments[2] = offScreenFrameBuf.albedo.view;
-		attachments[3] = offScreenFrameBuf.depth.view;
+		attachments[0] = gBufferPass.position.view;
+		attachments[1] = gBufferPass.normal.view;
+		attachments[2] = gBufferPass.albedo.view;
+		attachments[3] = gBufferPass.depth.view;
 
-		VkFramebufferCreateInfo fbufCreateInfo = {};
-		fbufCreateInfo.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
-		fbufCreateInfo.pNext = NULL;
-		fbufCreateInfo.renderPass = offScreenFrameBuf.renderPass;
-		fbufCreateInfo.pAttachments = attachments.data();
-		fbufCreateInfo.attachmentCount = static_cast<uint32_t>(attachments.size());
-		fbufCreateInfo.width = renderTargetExtent.width;
-		fbufCreateInfo.height = renderTargetExtent.height;
-		fbufCreateInfo.layers = 1;
-		VK_CHECK_RESULT(vkCreateFramebuffer(device, &fbufCreateInfo, nullptr, &offScreenFrameBuf.frameBuffer));
+		VkFramebufferCreateInfo framebufferCI = vks::initializers::framebufferCreateInfo();
+		framebufferCI.renderPass = gBufferPass.renderPass;
+		framebufferCI.pAttachments = attachments.data();
+		framebufferCI.attachmentCount = static_cast<uint32_t>(attachments.size());
+		framebufferCI.width = renderTargetExtent.width;
+		framebufferCI.height = renderTargetExtent.height;
+		framebufferCI.layers = 1;
+		VK_CHECK_RESULT(vkCreateFramebuffer(device, &framebufferCI, nullptr, &gBufferPass.frameBuffer));
 
-		// Create sampler to sample from the color attachments
-		VkSamplerCreateInfo sampler = vks::initializers::samplerCreateInfo();
-		sampler.magFilter = VK_FILTER_NEAREST;
-		sampler.minFilter = VK_FILTER_NEAREST;
-		sampler.mipmapMode = VK_SAMPLER_MIPMAP_MODE_LINEAR;
-		sampler.addressModeU = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
-		sampler.addressModeV = sampler.addressModeU;
-		sampler.addressModeW = sampler.addressModeU;
-		sampler.mipLodBias = 0.0f;
-		sampler.maxAnisotropy = 1.0f;
-		sampler.minLod = 0.0f;
-		sampler.maxLod = 1.0f;
-		sampler.borderColor = VK_BORDER_COLOR_FLOAT_OPAQUE_WHITE;
-		VK_CHECK_RESULT(vkCreateSampler(device, &sampler, nullptr, &colorSampler));
+		// Create a sampler for the G-Buffer attachments
+		VkSamplerCreateInfo samplerCI = vks::initializers::samplerCreateInfo();
+		samplerCI.magFilter = VK_FILTER_NEAREST;
+		samplerCI.minFilter = VK_FILTER_NEAREST;
+		samplerCI.mipmapMode = VK_SAMPLER_MIPMAP_MODE_LINEAR;
+		samplerCI.addressModeU = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+		samplerCI.addressModeV = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+		samplerCI.addressModeW = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+		samplerCI.mipLodBias = 0.0f;
+		samplerCI.maxAnisotropy = 1.0f;
+		samplerCI.minLod = 0.0f;
+		samplerCI.maxLod = 1.0f;
+		VK_CHECK_RESULT(vkCreateSampler(device, &samplerCI, nullptr, &colorSampler));
 	}
 
 	void loadAssets()
@@ -344,20 +329,20 @@ public:
 		const uint32_t glTFLoadingFlags = vkglTF::FileLoadingFlags::PreTransformVertices | vkglTF::FileLoadingFlags::PreMultiplyVertexColors | vkglTF::FileLoadingFlags::FlipY;
 		models.model.loadFromFile(getAssetPath() + "models/armor/armor.gltf", vulkanDevice, queue, glTFLoadingFlags);
 		models.floor.loadFromFile(getAssetPath() + "models/deferred_floor.gltf", vulkanDevice, queue, glTFLoadingFlags);
-		textures.model.colorMap.loadFromFile(getAssetPath() + "models/armor/colormap_rgba.ktx", VK_FORMAT_R8G8B8A8_UNORM, vulkanDevice, queue);
-		textures.model.normalMap.loadFromFile(getAssetPath() + "models/armor/normalmap_rgba.ktx", VK_FORMAT_R8G8B8A8_UNORM, vulkanDevice, queue);
-		textures.floor.colorMap.loadFromFile(getAssetPath() + "textures/stonefloor01_color_rgba.ktx", VK_FORMAT_R8G8B8A8_UNORM, vulkanDevice, queue);
-		textures.floor.normalMap.loadFromFile(getAssetPath() + "textures/stonefloor01_normal_rgba.ktx", VK_FORMAT_R8G8B8A8_UNORM, vulkanDevice, queue);
+		textures.model.color.loadFromFile(getAssetPath() + "models/armor/colormap_rgba.ktx", VK_FORMAT_R8G8B8A8_UNORM, vulkanDevice, queue);
+		textures.model.normal.loadFromFile(getAssetPath() + "models/armor/normalmap_rgba.ktx", VK_FORMAT_R8G8B8A8_UNORM, vulkanDevice, queue);
+		textures.floor.color.loadFromFile(getAssetPath() + "textures/stonefloor01_color_rgba.ktx", VK_FORMAT_R8G8B8A8_UNORM, vulkanDevice, queue);
+		textures.floor.normal.loadFromFile(getAssetPath() + "textures/stonefloor01_normal_rgba.ktx", VK_FORMAT_R8G8B8A8_UNORM, vulkanDevice, queue);
 	}
 
 	void createDescriptors()
 	{
 		// Pool
 		std::vector<VkDescriptorPoolSize> poolSizes = {
-			vks::initializers::descriptorPoolSize(VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 3),
+			vks::initializers::descriptorPoolSize(VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, getFrameCount()),
 			vks::initializers::descriptorPoolSize(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 9)
 		};
-		VkDescriptorPoolCreateInfo descriptorPoolInfo = vks::initializers::descriptorPoolCreateInfo(poolSizes, 300); // @todo
+		VkDescriptorPoolCreateInfo descriptorPoolInfo = vks::initializers::descriptorPoolCreateInfo(poolSizes, getFrameCount() + 3);
 		VK_CHECK_RESULT(vkCreateDescriptorPool(device, &descriptorPoolInfo, nullptr, &descriptorPool));
 
 		// Layouts
@@ -369,22 +354,14 @@ public:
 		descriptorSetLayoutCI = vks::initializers::descriptorSetLayoutCreateInfo(setLayoutBinding);
 		VK_CHECK_RESULT(vkCreateDescriptorSetLayout(device, &descriptorSetLayoutCI, nullptr, &descriptorSetLayouts.uniformbuffers));
 
-		// Layout for the deferred render targets to be sampled (Position, Normal, Albedo)
+		// Layout for the deferred render targets and model textures
 		setLayoutBindings = {
 			vks::initializers::descriptorSetLayoutBinding(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_SHADER_STAGE_FRAGMENT_BIT, 0),
 			vks::initializers::descriptorSetLayoutBinding(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_SHADER_STAGE_FRAGMENT_BIT, 1),
 			vks::initializers::descriptorSetLayoutBinding(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_SHADER_STAGE_FRAGMENT_BIT, 2),
 		};
 		descriptorSetLayoutCI = vks::initializers::descriptorSetLayoutCreateInfo(setLayoutBindings);
-		VK_CHECK_RESULT(vkCreateDescriptorSetLayout(device, &descriptorSetLayoutCI, nullptr, &descriptorSetLayouts.rendertargets));
-
-		// Layout for the model's textures
-		setLayoutBindings = {
-			vks::initializers::descriptorSetLayoutBinding(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_SHADER_STAGE_FRAGMENT_BIT, 0),
-			vks::initializers::descriptorSetLayoutBinding(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_SHADER_STAGE_FRAGMENT_BIT, 1),
-		};
-		descriptorSetLayoutCI = vks::initializers::descriptorSetLayoutCreateInfo(setLayoutBindings);
-		VK_CHECK_RESULT(vkCreateDescriptorSetLayout(device, &descriptorSetLayoutCI, nullptr, &descriptorSetLayouts.textures));
+		VK_CHECK_RESULT(vkCreateDescriptorSetLayout(device, &descriptorSetLayoutCI, nullptr, &descriptorSetLayouts.images));
 
 		// Sets
 		// Per-frame for dynamic uniform buffers
@@ -395,34 +372,34 @@ public:
 			vkUpdateDescriptorSets(device, 1, &writeDescriptorSet, 0, nullptr);
 		}
 
-		// Global set for the SSAO related images and buffers
+		// Global sets for the images
 		std::vector<VkWriteDescriptorSet> writeDescriptorSets{};
-		VkDescriptorSetAllocateInfo allocInfo = vks::initializers::descriptorSetAllocateInfo(descriptorPool, &descriptorSetLayouts.rendertargets, 1);
-		// SSAO and composition
+		VkDescriptorSetAllocateInfo allocInfo = vks::initializers::descriptorSetAllocateInfo(descriptorPool, &descriptorSetLayouts.images, 1);;
+		// G-Buffer attachments
+		VK_CHECK_RESULT(vkAllocateDescriptorSets(device, &allocInfo, &staticDescriptorSets.gBuffer));
 		std::vector<VkDescriptorImageInfo> imageDescriptors = {
-			vks::initializers::descriptorImageInfo(colorSampler, offScreenFrameBuf.position.view, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL),
-			vks::initializers::descriptorImageInfo(colorSampler, offScreenFrameBuf.normal.view, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL),
-			vks::initializers::descriptorImageInfo(colorSampler, offScreenFrameBuf.albedo.view, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL)
+			vks::initializers::descriptorImageInfo(colorSampler, gBufferPass.position.view, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL),
+			vks::initializers::descriptorImageInfo(colorSampler, gBufferPass.normal.view, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL),
+			vks::initializers::descriptorImageInfo(colorSampler, gBufferPass.albedo.view, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL)
 		};
-		VK_CHECK_RESULT(vkAllocateDescriptorSets(device, &allocInfo, &rendertargetsDescriptorSet));
 		writeDescriptorSets = {
-			vks::initializers::writeDescriptorSet(rendertargetsDescriptorSet, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 0, &imageDescriptors[0]),
-			vks::initializers::writeDescriptorSet(rendertargetsDescriptorSet, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, &imageDescriptors[1]),
-			vks::initializers::writeDescriptorSet(rendertargetsDescriptorSet, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 2, &imageDescriptors[2]),
-		};
-		vkUpdateDescriptorSets(device, static_cast<uint32_t>(writeDescriptorSets.size()), writeDescriptorSets.data(), 0, nullptr);
-		// Model
-		VK_CHECK_RESULT(vkAllocateDescriptorSets(device, &allocInfo, &modelTexturesDescriptorSet));
-		writeDescriptorSets = {
-			vks::initializers::writeDescriptorSet(modelTexturesDescriptorSet, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 0, &textures.model.colorMap.descriptor),
-			vks::initializers::writeDescriptorSet(modelTexturesDescriptorSet, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, &textures.model.normalMap.descriptor)
+			vks::initializers::writeDescriptorSet(staticDescriptorSets.gBuffer, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 0, &imageDescriptors[0]),
+			vks::initializers::writeDescriptorSet(staticDescriptorSets.gBuffer, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, &imageDescriptors[1]),
+			vks::initializers::writeDescriptorSet(staticDescriptorSets.gBuffer, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 2, &imageDescriptors[2]),
 		};
 		vkUpdateDescriptorSets(device, static_cast<uint32_t>(writeDescriptorSets.size()), writeDescriptorSets.data(), 0, nullptr);
-		// Background
-		VK_CHECK_RESULT(vkAllocateDescriptorSets(device, &allocInfo, &floorTexturesDescriptorSet));
+		// Textures
+		VK_CHECK_RESULT(vkAllocateDescriptorSets(device, &allocInfo, &staticDescriptorSets.modelTextures));
 		writeDescriptorSets = {
-			vks::initializers::writeDescriptorSet(floorTexturesDescriptorSet, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 0, &textures.floor.colorMap.descriptor),
-			vks::initializers::writeDescriptorSet(floorTexturesDescriptorSet, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, &textures.floor.normalMap.descriptor)
+			vks::initializers::writeDescriptorSet(staticDescriptorSets.modelTextures, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 0, &textures.model.color.descriptor),
+			vks::initializers::writeDescriptorSet(staticDescriptorSets.modelTextures, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, &textures.model.normal.descriptor)
+		};
+		vkUpdateDescriptorSets(device, static_cast<uint32_t>(writeDescriptorSets.size()), writeDescriptorSets.data(), 0, nullptr);
+		// Floor
+		VK_CHECK_RESULT(vkAllocateDescriptorSets(device, &allocInfo, &staticDescriptorSets.floorTextures));
+		writeDescriptorSets = {
+			vks::initializers::writeDescriptorSet(staticDescriptorSets.floorTextures, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 0, &textures.floor.color.descriptor),
+			vks::initializers::writeDescriptorSet(staticDescriptorSets.floorTextures, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, &textures.floor.normal.descriptor)
 		};
 		vkUpdateDescriptorSets(device, static_cast<uint32_t>(writeDescriptorSets.size()), writeDescriptorSets.data(), 0, nullptr);
 	}
@@ -430,7 +407,7 @@ public:
 	void createPipelines()
 	{
 		// Layouts
-		std::vector<VkDescriptorSetLayout> setLayouts = { descriptorSetLayouts.uniformbuffers, descriptorSetLayouts.rendertargets };
+		std::vector<VkDescriptorSetLayout> setLayouts = { descriptorSetLayouts.uniformbuffers, descriptorSetLayouts.images };
 		VkPipelineLayoutCreateInfo pipelineLayoutCI = vks::initializers::pipelineLayoutCreateInfo(setLayouts.data(), 2);
 		VK_CHECK_RESULT(vkCreatePipelineLayout(device, &pipelineLayoutCI, nullptr, &pipelineLayout));
 
@@ -474,7 +451,7 @@ public:
 		shaderStages[1] = loadShader(getShadersPath() + "deferred/mrt.frag.spv", VK_SHADER_STAGE_FRAGMENT_BIT);
 
 		// Separate render pass
-		pipelineCI.renderPass = offScreenFrameBuf.renderPass;
+		pipelineCI.renderPass = gBufferPass.renderPass;
 
 		// Blend attachment states required for all color attachments
 		// This is important, as color write mask will otherwise be 0x0 and you
@@ -498,19 +475,6 @@ public:
 		uniformData.instancePos[0] = glm::vec4(0.0f);
 		uniformData.instancePos[1] = glm::vec4(-4.0f, 0.0, -4.0f, 0.0f);
 		uniformData.instancePos[2] = glm::vec4(4.0f, 0.0, -4.0f, 0.0f);
-
-		// Update
-		updateUniformBufferOffscreen();
-		updateUniformBufferComposition();
-	}
-
-	// Update matrices used for the offscreen rendering of the scene
-	void updateUniformBufferOffscreen()
-	{
-		uniformData.projection = camera.matrices.perspective;
-		uniformData.view = camera.matrices.view;
-		uniformData.model = glm::mat4(1.0f);
-		memcpy(frameObjects[0].uniformBuffer.mapped, &uniformData, sizeof(uniformData));
 	}
 
 	void initLights()
@@ -541,32 +505,6 @@ public:
 		uniformData.lights[5].radius = 25.0f;
 	}
 
-	// Update lights and parameters passed to the composition shaders
-	void updateUniformBufferComposition()
-	{
-		uniformData.lights[0].position.x = sin(glm::radians(360.0f * timer)) * 5.0f;
-		uniformData.lights[0].position.z = cos(glm::radians(360.0f * timer)) * 5.0f;
-
-		uniformData.lights[1].position.x = -4.0f + sin(glm::radians(360.0f * timer) + 45.0f) * 2.0f;
-		uniformData.lights[1].position.z =  0.0f + cos(glm::radians(360.0f * timer) + 45.0f) * 2.0f;
-
-		uniformData.lights[2].position.x = 4.0f + sin(glm::radians(360.0f * timer)) * 2.0f;
-		uniformData.lights[2].position.z = 0.0f + cos(glm::radians(360.0f * timer)) * 2.0f;
-
-		uniformData.lights[4].position.x = 0.0f + sin(glm::radians(360.0f * timer + 90.0f)) * 5.0f;
-		uniformData.lights[4].position.z = 0.0f - cos(glm::radians(360.0f * timer + 45.0f)) * 5.0f;
-
-		uniformData.lights[5].position.x = 0.0f + sin(glm::radians(-360.0f * timer + 135.0f)) * 10.0f;
-		uniformData.lights[5].position.z = 0.0f - cos(glm::radians(-360.0f * timer - 45.0f)) * 10.0f;
-
-		// Current view position
-		uniformData.viewPos = glm::vec4(camera.position, 0.0f) * glm::vec4(-1.0f, 1.0f, -1.0f, 1.0f);
-
-		uniformData.debugDisplayTarget = debugDisplayTarget;
-
-		memcpy(frameObjects[0].uniformBuffer.mapped, &uniformData, sizeof(uniformData));
-	}
-
 	void prepare()
 	{
 		VulkanExampleBase::prepare();
@@ -579,7 +517,7 @@ public:
 		}
 		loadAssets();
 		initLights();
-		prepareOffscreenFramebuffer();
+		createGBuffer();
 		prepareUniformBuffers();
 		createDescriptors();
 		createPipelines();
@@ -593,77 +531,89 @@ public:
 		VulkanExampleBase::prepareFrame(currentFrame);
 
 		// Update uniform-buffers for the next frame
-		// @todo
-		updateUniformBufferOffscreen();
-		updateUniformBufferComposition();
+		uniformData.projection = camera.matrices.perspective;
+		uniformData.view = camera.matrices.view;
+		uniformData.model = glm::mat4(1.0f);
+		uniformData.viewPos = glm::vec4(camera.position, 0.0f) * glm::vec4(-1.0f, 1.0f, -1.0f, 1.0f);
+		uniformData.debugDisplayTarget = debugDisplayTarget;
+		// Animate the lights
+		uniformData.lights[0].position.x = sin(glm::radians(360.0f * timer)) * 5.0f;
+		uniformData.lights[0].position.z = cos(glm::radians(360.0f * timer)) * 5.0f;
+		uniformData.lights[1].position.x = -4.0f + sin(glm::radians(360.0f * timer) + 45.0f) * 2.0f;
+		uniformData.lights[1].position.z = 0.0f + cos(glm::radians(360.0f * timer) + 45.0f) * 2.0f;
+		uniformData.lights[2].position.x = 4.0f + sin(glm::radians(360.0f * timer)) * 2.0f;
+		uniformData.lights[2].position.z = 0.0f + cos(glm::radians(360.0f * timer)) * 2.0f;
+		uniformData.lights[4].position.x = 0.0f + sin(glm::radians(360.0f * timer + 90.0f)) * 5.0f;
+		uniformData.lights[4].position.z = 0.0f - cos(glm::radians(360.0f * timer + 45.0f)) * 5.0f;
+		uniformData.lights[5].position.x = 0.0f + sin(glm::radians(-360.0f * timer + 135.0f)) * 10.0f;
+		uniformData.lights[5].position.z = 0.0f - cos(glm::radians(-360.0f * timer - 45.0f)) * 10.0f;
+		memcpy(currentFrame.uniformBuffer.mapped, &uniformData, sizeof(uniformData));
 
 		// Build the command buffer
 		const VkCommandBuffer commandBuffer = currentFrame.commandBuffer;
 		const VkCommandBufferBeginInfo commandBufferBeginInfo = getCommandBufferBeginInfo();
+		VkRenderPassBeginInfo renderPassBeginInfo{};
+		VkViewport viewport{};
+		VkRect2D renderArea{};
 		VK_CHECK_RESULT(vkBeginCommandBuffer(commandBuffer, &commandBufferBeginInfo));
 
-		// First render pass: @todo
-		{
-			// Clear values for all attachments written in the fragment shader
-			std::array<VkClearValue, 4> clearValues;
-			clearValues[0].color = { { 0.0f, 0.0f, 0.0f, 0.0f } };
-			clearValues[1].color = { { 0.0f, 0.0f, 0.0f, 0.0f } };
-			clearValues[2].color = { { 0.0f, 0.0f, 0.0f, 0.0f } };
-			clearValues[3].depthStencil = { 1.0f, 0 };
+		// First pass: Fill the G-Buffer attachments with positions, normals, albedo and specular values
 
-			VkRenderPassBeginInfo renderPassBeginInfo = vks::initializers::renderPassBeginInfo();
-			renderPassBeginInfo.renderPass = offScreenFrameBuf.renderPass;
-			renderPassBeginInfo.framebuffer = offScreenFrameBuf.frameBuffer;
-			renderPassBeginInfo.renderArea.extent = renderTargetExtent;
-			renderPassBeginInfo.clearValueCount = 4;
-			renderPassBeginInfo.pClearValues = clearValues.data();
+		// We need to clear all attachments written in the fragment shader
+		std::array<VkClearValue, 4> clearValues;
+		clearValues[0].color = { { 0.0f, 0.0f, 0.0f, 0.0f } };
+		clearValues[1].color = { { 0.0f, 0.0f, 0.0f, 0.0f } };
+		clearValues[2].color = { { 0.0f, 0.0f, 0.0f, 0.0f } };
+		clearValues[3].depthStencil = { 1.0f, 0 };
 
-			vkCmdBeginRenderPass(commandBuffer, &renderPassBeginInfo, VK_SUBPASS_CONTENTS_INLINE);
+		renderPassBeginInfo = vks::initializers::renderPassBeginInfo();
+		renderPassBeginInfo.renderPass = gBufferPass.renderPass;
+		renderPassBeginInfo.framebuffer = gBufferPass.frameBuffer;
+		renderPassBeginInfo.renderArea.extent = renderTargetExtent;
+		renderPassBeginInfo.clearValueCount = 4;
+		renderPassBeginInfo.pClearValues = clearValues.data();
 
-			VkViewport viewport = vks::initializers::viewport(renderTargetExtent, 0.0f, 1.0f);
-			vkCmdSetViewport(commandBuffer, 0, 1, &viewport);
+		viewport = vks::initializers::viewport(renderTargetExtent, 0.0f, 1.0f);
+		renderArea = vks::initializers::rect2D(renderTargetExtent);
 
-			VkRect2D scissor = vks::initializers::rect2D(renderTargetExtent);
-			vkCmdSetScissor(commandBuffer, 0, 1, &scissor);
+		vkCmdBeginRenderPass(commandBuffer, &renderPassBeginInfo, VK_SUBPASS_CONTENTS_INLINE);
 
-			vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelines.offscreen);
-			vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout, 0, 1, &frameObjects[0].descriptorSet, 0, nullptr);
+		vkCmdSetViewport(commandBuffer, 0, 1, &viewport);
+		vkCmdSetScissor(commandBuffer, 0, 1, &renderArea);
 
-			// Background
-			vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout, 1, 1, &floorTexturesDescriptorSet, 0, nullptr);
-			models.floor.draw(commandBuffer);
+		vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelines.offscreen);
+		vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout, 0, 1, &frameObjects[0].descriptorSet, 0, nullptr);
 
-			// Instanced object
-			vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout, 1, 1, &modelTexturesDescriptorSet, 0, nullptr);
-			models.model.bindBuffers(commandBuffer);
-			vkCmdDrawIndexed(commandBuffer, models.model.indices.count, 3, 0, 0, 0);
+		// Draw the floor
+		vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout, 1, 1, &staticDescriptorSets.floorTextures, 0, nullptr);
+		models.floor.draw(commandBuffer);
 
-			vkCmdEndRenderPass(commandBuffer);
-		}
+		// draw the instanced models, positions are taken from the uniform buffer
+		vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout, 1, 1, &staticDescriptorSets.modelTextures, 0, nullptr);
+		models.model.bindBuffers(commandBuffer);
+		vkCmdDrawIndexed(commandBuffer, models.model.indices.count, 3, 0, 0, 0);
 
-		// Second render pass: @todo
-		// Note: Explicit synchronization is not required between the render pass, as this is done implicit via sub pass dependencies
-		{
-			const VkRect2D renderArea = getRenderArea();
-			const VkViewport viewport = getViewport();
-			const VkRenderPassBeginInfo renderPassBeginInfo = getRenderPassBeginInfo(renderPass, defaultClearValues);
-			vkCmdBeginRenderPass(commandBuffer, &renderPassBeginInfo, VK_SUBPASS_CONTENTS_INLINE);
-			vkCmdSetViewport(commandBuffer, 0, 1, &viewport);
-			vkCmdSetScissor(commandBuffer, 0, 1, &renderArea);
+		vkCmdEndRenderPass(commandBuffer);
 
-			vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout, 0, 1, &frameObjects[0].descriptorSet, 0, nullptr);
-			vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout, 1, 1, &rendertargetsDescriptorSet, 0, nullptr);
+		// Second render pass: Use the G-Buffer attachments to compose the final scene, applying lighting in screen space
+		renderArea = getRenderArea();
+		viewport = getViewport();
+		renderPassBeginInfo = getRenderPassBeginInfo(renderPass, defaultClearValues);
+		vkCmdBeginRenderPass(commandBuffer, &renderPassBeginInfo, VK_SUBPASS_CONTENTS_INLINE);
+		vkCmdSetViewport(commandBuffer, 0, 1, &viewport);
+		vkCmdSetScissor(commandBuffer, 0, 1, &renderArea);
+			
+		vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout, 0, 1, &frameObjects[0].descriptorSet, 0, nullptr);
+		vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout, 1, 1, &staticDescriptorSets.gBuffer, 0, nullptr);
+			
+		vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelines.composition);
+		// Draw a screen covering triangle, composition is done in the fragment shader
+		vkCmdDraw(commandBuffer, 3, 1, 0, 0);
 
-			vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelines.composition);
-			// Final composition as full screen quad
-			// Note: Also used for debug display if debugDisplayTarget > 0
-			vkCmdDraw(commandBuffer, 3, 1, 0, 0);
+		drawUI(commandBuffer);
 
-			drawUI(commandBuffer);
-
-			vkCmdEndRenderPass(commandBuffer);
-		}
-
+		vkCmdEndRenderPass(commandBuffer);
+	
 		VK_CHECK_RESULT(vkEndCommandBuffer(commandBuffer));
 
 		VulkanExampleBase::submitFrame(currentFrame);

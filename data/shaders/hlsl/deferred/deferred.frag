@@ -1,11 +1,12 @@
 // Copyright 2020 Google LLC
+// Copyright 2021 Sascha Willems
 
-Texture2D textureposition : register(t1);
-SamplerState samplerposition : register(s1);
-Texture2D textureNormal : register(t2);
-SamplerState samplerNormal : register(s2);
-Texture2D textureAlbedo : register(t3);
-SamplerState samplerAlbedo : register(s3);
+Texture2D textureposition : register(t0, space1);
+SamplerState samplerposition : register(s0, space1);
+Texture2D textureNormal : register(t1, space1);
+SamplerState samplerNormal : register(s1, space1);
+Texture2D textureAlbedo : register(t2, space1);
+SamplerState samplerAlbedo : register(s2, space1);
 
 struct Light {
 	float4 position;
@@ -15,12 +16,16 @@ struct Light {
 
 struct UBO
 {
+	float4x4 projection;
+	float4x4 model;
+	float4x4 view;
+	float4 instancePos[3];
 	Light lights[6];
 	float4 viewPos;
 	int displayDebugTarget;
 };
 
-cbuffer ubo : register(b4) { UBO ubo; }
+cbuffer ubo : register(b0, space0) { UBO ubo; }
 
 
 float4 main([[vk::location(0)]] float2 inUV : TEXCOORD0) : SV_TARGET

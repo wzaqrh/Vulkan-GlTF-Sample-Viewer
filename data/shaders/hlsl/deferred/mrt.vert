@@ -9,15 +9,24 @@ struct VSInput
 [[vk::location(4)]] float3 Tangent : TEXCOORD1;
 };
 
+struct Light {
+	float4 position;
+	float3 color;
+	float radius;
+};
+
 struct UBO
 {
 	float4x4 projection;
 	float4x4 model;
 	float4x4 view;
 	float4 instancePos[3];
+	Light lights[6];
+	float4 viewPos;
+	int displayDebugTarget;
 };
 
-cbuffer ubo : register(b0) { UBO ubo; }
+cbuffer ubo : register(b0, space0) { UBO ubo; }
 
 struct VSOutput
 {
