@@ -1,11 +1,12 @@
 // Copyright 2020 Google LLC
+// Copyright 2021 Sascha Willems
 
-Texture2DMS<float4> texturePosition : register(t1);
-SamplerState samplerPosition : register(s1);
-Texture2DMS<float4> textureNormal : register(t2);
-SamplerState samplerNormal : register(s2);
-Texture2DMS<float4> textureAlbedo : register(t3);
-SamplerState samplerAlbedo : register(s3);
+Texture2DMS<float4> texturePosition : register(t0, space1);
+SamplerState samplerPosition : register(s0, space1);
+Texture2DMS<float4> textureNormal : register(t1, space1);
+SamplerState samplerNormal : register(s1, space1);
+Texture2DMS<float4> textureAlbedo : register(t2, space1);
+SamplerState samplerAlbedo : register(s2, space1);
 
 struct Light {
 	float4 position;
@@ -15,12 +16,16 @@ struct Light {
 
 struct UBO
 {
+	float4x4 projection;
+	float4x4 model;
+	float4x4 view;
+	float4 instancePos[3];
 	Light lights[6];
 	float4 viewPos;
-	int debugDisplayTarget;
+	int displayDebugTarget;
 };
 
-cbuffer ubo : register(b4) { UBO ubo; }
+cbuffer ubo : register(b0, space0) { UBO ubo; }
 
 [[vk::constant_id(0)]] const int NUM_SAMPLES = 8;
 
@@ -86,8 +91,8 @@ float4 main([[vk::location(0)]] float2 inUV : TEXCOORD0) : SV_TARGET
 	uint status = 0;
 
 	// Debug display
-	if (ubo.debugDisplayTarget > 0) {
-		switch (ubo.debugDisplayTarget) {
+	if (ubo.displayDebugTarget > 0) {
+		switch (ubo.displayDebugTarget) {
 			case 1: 
 				fragColor.rgb = texturePosition.Load(UV, 0, int2(0, 0), status).rgb;
 				break;

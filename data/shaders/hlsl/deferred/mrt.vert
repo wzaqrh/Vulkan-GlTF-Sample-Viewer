@@ -1,4 +1,5 @@
 // Copyright 2020 Google LLC
+// Copyright 2021 Sascha Willems
 
 struct VSInput
 {

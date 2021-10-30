@@ -450,13 +450,10 @@ public:
 		pipelineCI.pVertexInputState = vkglTF::Vertex::getPipelineVertexInputState({vkglTF::VertexComponent::Position, vkglTF::VertexComponent::UV, vkglTF::VertexComponent::Color, vkglTF::VertexComponent::Normal, vkglTF::VertexComponent::Tangent});
 		rasterizationState.cullMode = VK_CULL_MODE_BACK_BIT;
 
-		// Offscreen pipeline
+		// Offscreen scene rendering pipeline to fill the G-Buffer
+		pipelineCI.renderPass = gBufferPass.renderPass;
 		shaderStages[0] = loadShader(getShadersPath() + "deferred/mrt.vert.spv", VK_SHADER_STAGE_VERTEX_BIT);
 		shaderStages[1] = loadShader(getShadersPath() + "deferred/mrt.frag.spv", VK_SHADER_STAGE_FRAGMENT_BIT);
-
-		// Separate render pass
-		pipelineCI.renderPass = gBufferPass.renderPass;
-
 		// Blend attachment states required for all color attachments
 		// This is important, as color write mask will otherwise be 0x0 and you
 		// won't see anything rendered to the attachment
@@ -465,10 +462,8 @@ public:
 			vks::initializers::pipelineColorBlendAttachmentState(0xf, VK_FALSE),
 			vks::initializers::pipelineColorBlendAttachmentState(0xf, VK_FALSE)
 		};
-
 		colorBlendState.attachmentCount = static_cast<uint32_t>(blendAttachmentStates.size());
 		colorBlendState.pAttachments = blendAttachmentStates.data();
-
 		VK_CHECK_RESULT(vkCreateGraphicsPipelines(device, pipelineCache, 1, &pipelineCI, nullptr, &pipelines.offscreen));
 	}
 
@@ -478,6 +473,7 @@ public:
 		uniformData.instancePos[0] = glm::vec4(0.0f);
 		uniformData.instancePos[1] = glm::vec4(-4.0f, 0.0, -4.0f, 0.0f);
 		uniformData.instancePos[2] = glm::vec4(4.0f, 0.0, -4.0f, 0.0f);
+		// Lights
 		// White
 		uniformData.lights[0].position = glm::vec4(0.0f, 0.0f, 1.0f, 0.0f);
 		uniformData.lights[0].color = glm::vec3(1.5f);

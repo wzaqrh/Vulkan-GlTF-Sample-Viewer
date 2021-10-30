@@ -1,8 +1,8 @@
 #version 450
 
-layout (binding = 1) uniform sampler2DMS samplerPosition;
-layout (binding = 2) uniform sampler2DMS samplerNormal;
-layout (binding = 3) uniform sampler2DMS samplerAlbedo;
+layout (set = 1, binding = 0) uniform sampler2DMS samplerPosition;
+layout (set = 1, binding = 1) uniform sampler2DMS samplerNormal;
+layout (set = 1, binding = 2) uniform sampler2DMS samplerAlbedo;
 
 layout (location = 0) in vec2 inUV;
 
@@ -14,11 +14,15 @@ struct Light {
 	float radius;
 };
 
-layout (binding = 4) uniform UBO 
+layout (set = 0, binding = 0) uniform UBO 
 {
+	mat4 projection;
+	mat4 model;
+	mat4 view;
+	vec4 instancePos[3];
 	Light lights[6];
 	vec4 viewPos;
-	int debugDisplayTarget;
+	int displayDebugTarget;
 } ubo;
 
 layout (constant_id = 0) const int NUM_SAMPLES = 8;
@@ -80,8 +84,8 @@ void main()
 	ivec2 UV = ivec2(inUV * attDim);
 	
 	// Debug display
-	if (ubo.debugDisplayTarget > 0) {
-		switch (ubo.debugDisplayTarget) {
+	if (ubo.displayDebugTarget > 0) {
+		switch (ubo.displayDebugTarget) {
 			case 1: 
 				outFragcolor.rgb = texelFetch(samplerPosition, UV, 0).rgb;
 				break;
