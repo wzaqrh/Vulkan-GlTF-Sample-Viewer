@@ -96,9 +96,10 @@ public:
 		VkFramebuffer frameBuffer;
 		FrameBufferAttachment position, normal, albedo, depth;
 		VkRenderPass renderPass;
+		// Sampler for the G-Buffer's color attachments (used in the composition pass)
+		VkSampler samper;
 	} gBufferPass;
 
-	// One sampler for the frame buffer color attachments
 	VkSampler colorSampler;
 
 	VulkanExample() : VulkanExampleBase(ENABLE_VALIDATION)
@@ -406,11 +407,12 @@ public:
 
 	void createPipelines()
 	{
-		// Layouts
+		// Layout shared by all pipelines with per-frame uniform buffers and static images
 		std::vector<VkDescriptorSetLayout> setLayouts = { descriptorSetLayouts.uniformbuffers, descriptorSetLayouts.images };
 		VkPipelineLayoutCreateInfo pipelineLayoutCI = vks::initializers::pipelineLayoutCreateInfo(setLayouts.data(), 2);
 		VK_CHECK_RESULT(vkCreatePipelineLayout(device, &pipelineLayoutCI, nullptr, &pipelineLayout));
 
+		// Pipelines
 		VkPipelineInputAssemblyStateCreateInfo inputAssemblyState = vks::initializers::pipelineInputAssemblyStateCreateInfo(VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST, 0, VK_FALSE);
 		VkPipelineRasterizationStateCreateInfo rasterizationState = vks::initializers::pipelineRasterizationStateCreateInfo(VK_POLYGON_MODE_FILL, VK_CULL_MODE_BACK_BIT, VK_FRONT_FACE_COUNTER_CLOCKWISE, 0);
 		VkPipelineColorBlendAttachmentState blendAttachmentState = vks::initializers::pipelineColorBlendAttachmentState(0xf, VK_FALSE);
@@ -422,7 +424,9 @@ public:
 		VkPipelineDynamicStateCreateInfo dynamicState = vks::initializers::pipelineDynamicStateCreateInfo(dynamicStateEnables);
 		std::array<VkPipelineShaderStageCreateInfo, 2> shaderStages;
 
-		VkGraphicsPipelineCreateInfo pipelineCI = vks::initializers::pipelineCreateInfo(pipelineLayout, renderPass);
+		VkGraphicsPipelineCreateInfo pipelineCI = vks::initializers::pipelineCreateInfo();
+		pipelineCI.layout = pipelineLayout;
+		pipelineCI.renderPass = renderPass;
 		pipelineCI.pInputAssemblyState = &inputAssemblyState;
 		pipelineCI.pRasterizationState = &rasterizationState;
 		pipelineCI.pColorBlendState = &colorBlendState;
@@ -468,17 +472,12 @@ public:
 		VK_CHECK_RESULT(vkCreateGraphicsPipelines(device, pipelineCache, 1, &pipelineCI, nullptr, &pipelines.offscreen));
 	}
 
-	// Prepare and initialize uniform buffer containing shader uniforms
-	void prepareUniformBuffers()
+	void initUniformValues()
 	{
 		// Setup instanced model positions
 		uniformData.instancePos[0] = glm::vec4(0.0f);
 		uniformData.instancePos[1] = glm::vec4(-4.0f, 0.0, -4.0f, 0.0f);
 		uniformData.instancePos[2] = glm::vec4(4.0f, 0.0, -4.0f, 0.0f);
-	}
-
-	void initLights()
-	{
 		// White
 		uniformData.lights[0].position = glm::vec4(0.0f, 0.0f, 1.0f, 0.0f);
 		uniformData.lights[0].color = glm::vec3(1.5f);
@@ -516,9 +515,8 @@ public:
 			VK_CHECK_RESULT(vulkanDevice->createAndMapBuffer(VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, &frame.uniformBuffer, sizeof(UniformData)));
 		}
 		loadAssets();
-		initLights();
+		initUniformValues();
 		createGBuffer();
-		prepareUniformBuffers();
 		createDescriptors();
 		createPipelines();
 		prepared = true;

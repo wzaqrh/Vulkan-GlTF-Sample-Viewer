@@ -1,6 +1,6 @@
 #version 450
 
-layout (set = 1, binding = 0) uniform sampler2D samplerposition;
+layout (set = 1, binding = 0) uniform sampler2D samplerPosition;
 layout (set = 1, binding = 1) uniform sampler2D samplerNormal;
 layout (set = 1, binding = 2) uniform sampler2D samplerAlbedo;
 
@@ -28,7 +28,7 @@ layout (set = 0, binding = 0) uniform UBO
 void main() 
 {
 	// Get G-Buffer values
-	vec3 fragPos = texture(samplerposition, inUV).rgb;
+	vec3 fragPos = texture(samplerPosition, inUV).rgb;
 	vec3 normal = texture(samplerNormal, inUV).rgb;
 	vec4 albedo = texture(samplerAlbedo, inUV);
 	
