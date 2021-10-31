@@ -161,19 +161,16 @@ public:
 	void createAttachment(VkFormat format, VkImageUsageFlagBits usage, FrameBufferAttachment* attachment)
 	{
 		VkImageAspectFlags aspectMask = 0;
-		VkImageLayout imageLayout;
 
 		attachment->format = format;
 
 		if (usage & VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT)
 		{
 			aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-			imageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
 		}
 		if (usage & VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT)
 		{
 			aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT | VK_IMAGE_ASPECT_STENCIL_BIT;
-			imageLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
 		}
 
 		assert(aspectMask > 0);
@@ -296,7 +293,6 @@ public:
 		dependencies[2].dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
 
 		VkRenderPassCreateInfo renderPassCI = vks::initializers::renderPassCreateInfo();
-		renderPassCI.sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO;
 		renderPassCI.pAttachments = attachmentDescriptions.data();
 		renderPassCI.attachmentCount = static_cast<uint32_t>(attachmentDescriptions.size());
 		renderPassCI.subpassCount = 1;
@@ -631,7 +627,7 @@ public:
 		vkCmdSetScissor(commandBuffer, 0, 1, &renderArea);
 
 		vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, useSampleShading ? pipelines.offscreenSampleShading : pipelines.offscreen);
-		vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout, 0, 1, &frameObjects[0].descriptorSet, 0, nullptr);
+		vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout, 0, 1, &currentFrame.descriptorSet, 0, nullptr);
 
 		// Draw the floor
 		vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout, 1, 1, &staticDescriptorSets.backgroundTextures, 0, nullptr);
@@ -652,7 +648,7 @@ public:
 		vkCmdSetViewport(commandBuffer, 0, 1, &viewport);
 		vkCmdSetScissor(commandBuffer, 0, 1, &renderArea);
 
-		vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout, 0, 1, &frameObjects[0].descriptorSet, 0, nullptr);
+		vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout, 0, 1, &currentFrame.descriptorSet, 0, nullptr);
 		vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout, 1, 1, &staticDescriptorSets.gBuffer, 0, nullptr);
 
 		vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, useMSAA ? pipelines.deferred : pipelines.deferredNoMSAA);
