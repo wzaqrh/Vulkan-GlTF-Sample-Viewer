@@ -7,7 +7,10 @@
  */
 
 /*
- * @todo
+ * This sample builds on the deferred rendering sample and shows how to add multiple shadows to a deferred setup
+ * In addition to the G-Buffer attachments, a layered shadow attachment is created with the nubmer of layers = number of lights in the scene (see createLayeredShadowmap)
+ * A geometry shader is then used to output depth for each light in a single pass to these layers in a single pass
+ * The layered shadow attachment is then used in the final composition pass to apply shadows to the scene
  */
 
 #include "vulkanexamplebase.h"
@@ -27,8 +30,7 @@ public:
 	int32_t debugDisplayTarget = 0;
 	bool enableShadows = true;
 
-	// Keep depth range as small as possible
-	// for better shadow map precision
+	// We keep the Z-Range as small as possible to increase shadow precisions
 	float zNear = 0.1f;
 	float zFar = 64.0f;
 	float lightFOV = 100.0f;
@@ -193,6 +195,7 @@ public:
 		VkBool32 validDepthFormat = vks::tools::getSupportedDepthFormat(physicalDevice, &depthFormat);
 		assert(validDepthFormat);
 
+		// Create a layered image
 		VkImageCreateInfo image = vks::initializers::imageCreateInfo();
 		image.imageType = VK_IMAGE_TYPE_2D;
 		image.format = depthFormat;
@@ -204,15 +207,13 @@ public:
 		image.samples = VK_SAMPLE_COUNT_1_BIT;
 		image.tiling = VK_IMAGE_TILING_OPTIMAL;
 		image.usage = VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT;
-
-		VkMemoryAllocateInfo memAlloc = vks::initializers::memoryAllocateInfo();
-		VkMemoryRequirements memReqs;
-
 		VK_CHECK_RESULT(vkCreateImage(device, &image, nullptr, &shadowPass.attachment.image));
-		vkGetImageMemoryRequirements(device, shadowPass.attachment.image, &memReqs);
-		memAlloc.allocationSize = memReqs.size;
-		memAlloc.memoryTypeIndex = vulkanDevice->getMemoryType(memReqs.memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
-		VK_CHECK_RESULT(vkAllocateMemory(device, &memAlloc, nullptr, &shadowPass.attachment.memory));
+		VkMemoryRequirements memRequirements;
+		vkGetImageMemoryRequirements(device, shadowPass.attachment.image, &memRequirements);
+		VkMemoryAllocateInfo memAllocInfo = vks::initializers::memoryAllocateInfo();
+		memAllocInfo.allocationSize = memRequirements.size;
+		memAllocInfo.memoryTypeIndex = vulkanDevice->getMemoryType(memRequirements.memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+		VK_CHECK_RESULT(vkAllocateMemory(device, &memAllocInfo, nullptr, &shadowPass.attachment.memory));
 		VK_CHECK_RESULT(vkBindImageMemory(device, shadowPass.attachment.image, shadowPass.attachment.memory, 0));
 
 		VkImageViewCreateInfo imageView = vks::initializers::imageViewCreateInfo();
@@ -224,7 +225,7 @@ public:
 		imageView.image = shadowPass.attachment.image;
 		VK_CHECK_RESULT(vkCreateImageView(device, &imageView, nullptr, &shadowPass.attachment.view));
 
-		// Create a sampler for the G-Buffer attachments
+		// Create a sampler for the layered shadow attachment
 		VkSamplerCreateInfo samplerCI = vks::initializers::samplerCreateInfo();
 		samplerCI.magFilter = VK_FILTER_LINEAR;
 		samplerCI.minFilter = VK_FILTER_LINEAR;
@@ -319,15 +320,14 @@ public:
 		image.samples = VK_SAMPLE_COUNT_1_BIT;
 		image.tiling = VK_IMAGE_TILING_OPTIMAL;
 		image.usage = usage | VK_IMAGE_USAGE_SAMPLED_BIT;
-
-		VkMemoryAllocateInfo memAlloc = vks::initializers::memoryAllocateInfo();
-		VkMemoryRequirements memReqs;
-
 		VK_CHECK_RESULT(vkCreateImage(device, &image, nullptr, &attachment->image));
-		vkGetImageMemoryRequirements(device, attachment->image, &memReqs);
-		memAlloc.allocationSize = memReqs.size;
-		memAlloc.memoryTypeIndex = vulkanDevice->getMemoryType(memReqs.memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
-		VK_CHECK_RESULT(vkAllocateMemory(device, &memAlloc, nullptr, &attachment->memory));
+
+		VkMemoryRequirements memRequirements;
+		vkGetImageMemoryRequirements(device, attachment->image, &memRequirements);
+		VkMemoryAllocateInfo memAllocInfo = vks::initializers::memoryAllocateInfo();
+		memAllocInfo.allocationSize = memRequirements.size;
+		memAllocInfo.memoryTypeIndex = vulkanDevice->getMemoryType(memRequirements.memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+		VK_CHECK_RESULT(vkAllocateMemory(device, &memAllocInfo, nullptr, &attachment->memory));
 		VK_CHECK_RESULT(vkBindImageMemory(device, attachment->image, attachment->memory, 0));
 
 		VkImageViewCreateInfo imageView = vks::initializers::imageViewCreateInfo();
@@ -565,7 +565,9 @@ public:
 		VkPipelineDynamicStateCreateInfo dynamicState = vks::initializers::pipelineDynamicStateCreateInfo(dynamicStateEnables);
 		std::array<VkPipelineShaderStageCreateInfo, 2> shaderStages;
 
-		VkGraphicsPipelineCreateInfo pipelineCI = vks::initializers::pipelineCreateInfo(pipelineLayout, renderPass);
+		VkGraphicsPipelineCreateInfo pipelineCI = vks::initializers::pipelineCreateInfo();
+		pipelineCI.layout = pipelineLayout;
+		pipelineCI.renderPass = renderPass;
 		pipelineCI.pInputAssemblyState = &inputAssemblyState;
 		pipelineCI.pRasterizationState = &rasterizationState;
 		pipelineCI.pColorBlendState = &colorBlendState;
@@ -596,8 +598,7 @@ public:
 		// Blend attachment states required for all color attachments
 		// This is important, as color write mask will otherwise be 0x0 and you
 		// won't see anything rendered to the attachment
-		std::array<VkPipelineColorBlendAttachmentState, 3> blendAttachmentStates =
-		{
+		std::array<VkPipelineColorBlendAttachmentState, 3> blendAttachmentStates = {
 			vks::initializers::pipelineColorBlendAttachmentState(0xf, VK_FALSE),
 			vks::initializers::pipelineColorBlendAttachmentState(0xf, VK_FALSE),
 			vks::initializers::pipelineColorBlendAttachmentState(0xf, VK_FALSE)
