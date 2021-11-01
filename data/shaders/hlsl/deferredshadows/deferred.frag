@@ -1,38 +1,17 @@
 // Copyright 2020 Google LLC
+// Copyright 2021 Sascha Willems
 
-Texture2D textureposition : register(t1);
-SamplerState samplerposition : register(s1);
-Texture2D textureNormal : register(t2);
-SamplerState samplerNormal : register(s2);
-Texture2D textureAlbedo : register(t3);
-SamplerState samplerAlbedo : register(s3);
+Texture2D textureposition : register(t0, space1);
+SamplerState samplerposition : register(s0, space1);
+Texture2D textureNormal : register(t1, space1);
+SamplerState samplerNormal : register(s1, space1);
+Texture2D textureAlbedo : register(t2, space1);
+SamplerState samplerAlbedo : register(s2, space1);
 // Depth from the light's point of view
-//layout (binding = 5) uniform sampler2DShadow samplerShadowMap;
-Texture2DArray textureShadowMap : register(t5);
-SamplerState samplerShadowMap : register(s5);
+Texture2DArray textureShadowMap : register(t3, space1);
+SamplerState samplerShadowMap : register(s3, space1);
 
-#define LIGHT_COUNT 3
-#define SHADOW_FACTOR 0.25
-#define AMBIENT_LIGHT 0.1
-#define USE_PCF
-
-struct Light
-{
-	float4 position;
-	float4 target;
-	float4 color;
-	float4x4 viewMatrix;
-};
-
-struct UBO
-{
-	float4 viewPos;
-	Light lights[LIGHT_COUNT];
-	int useShadows;
-	int displayDebugTarget;
-};
-
-cbuffer ubo : register(b4) { UBO ubo; }
+#include "ubo.include.hlsl"
 
 float textureProj(float4 P, float layer, float2 offset)
 {
@@ -102,8 +81,8 @@ float4 main([[vk::location(0)]] float2 inUV : TEXCOORD0) : SV_TARGET
 	float3 fragcolor;
 
 	// Debug display
-	if (ubo.displayDebugTarget > 0) {
-		switch (ubo.displayDebugTarget) {
+	if (ubo.debugDisplayTarget > 0) {
+		switch (ubo.debugDisplayTarget) {
 			case 1: 
 				fragcolor.rgb = shadow(float3(1.0, 1.0, 1.0), fragPos);
 				break;

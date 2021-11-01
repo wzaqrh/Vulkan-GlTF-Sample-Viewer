@@ -1,14 +1,9 @@
 // Copyright 2020 Google LLC
+// Copyright 2021 Sascha Willems
+
+#include "ubo.include.hlsl"
 
 #define LIGHT_COUNT 3
-
-struct UBO
-{
-	float4x4 mvp[LIGHT_COUNT];
-	float4 instancePos[3];
-};
-
-cbuffer ubo : register(b0) { UBO ubo; }
 
 struct VSOutput
 {
@@ -31,7 +26,7 @@ void main(triangle VSOutput input[3], uint InvocationID : SV_GSInstanceID, inout
 	{
 		float4 tmpPos = input[i].Pos + instancedPos;
 		GSOutput output = (GSOutput)0;
-		output.Pos = mul(ubo.mvp[InvocationID], tmpPos);
+		output.Pos = mul(ubo.lights[InvocationID].viewMatrix, tmpPos);
 		output.Layer = InvocationID;
 		outStream.Append( output );
 	}
