@@ -187,15 +187,13 @@ public:
 		image.tiling = VK_IMAGE_TILING_OPTIMAL;
 		image.usage = usage | VK_IMAGE_USAGE_SAMPLED_BIT;
 		image.samples = sampleCount;
-
-		VkMemoryAllocateInfo memAlloc = vks::initializers::memoryAllocateInfo();
-		VkMemoryRequirements memReqs;
-
 		VK_CHECK_RESULT(vkCreateImage(device, &image, nullptr, &attachment->image));
-		vkGetImageMemoryRequirements(device, attachment->image, &memReqs);
-		memAlloc.allocationSize = memReqs.size;
-		memAlloc.memoryTypeIndex = vulkanDevice->getMemoryType(memReqs.memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
-		VK_CHECK_RESULT(vkAllocateMemory(device, &memAlloc, nullptr, &attachment->memory));
+		VkMemoryRequirements memRequirements;
+		vkGetImageMemoryRequirements(device, attachment->image, &memRequirements);
+		VkMemoryAllocateInfo memAllocInfo = vks::initializers::memoryAllocateInfo();
+		memAllocInfo.allocationSize = memRequirements.size;
+		memAllocInfo.memoryTypeIndex = vulkanDevice->getMemoryType(memRequirements.memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+		VK_CHECK_RESULT(vkAllocateMemory(device, &memAllocInfo, nullptr, &attachment->memory));
 		VK_CHECK_RESULT(vkBindImageMemory(device, attachment->image, attachment->memory, 0));
 
 		VkImageViewCreateInfo imageView = vks::initializers::imageViewCreateInfo();
@@ -557,7 +555,7 @@ public:
 			VK_CHECK_RESULT(vulkanDevice->createAndMapBuffer(VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, &frame.uniformBuffer, sizeof(UniformData)));
 		}
 #if defined(__ANDROID__)
-		// On Andoid, we use the larger screen dimension for the G-Buffer attchment size
+		// On Andoid, we use the larger screen dimension for the G-Buffer attachment size
 		renderTargetExtent = { std::max(width,height), std::max(width,height) };
 #endif
 		sampleCount = getMaxUsableSampleCount();
@@ -602,7 +600,7 @@ public:
 		VkRect2D renderArea{};
 		VK_CHECK_RESULT(vkBeginCommandBuffer(commandBuffer, &commandBufferBeginInfo));
 
-		// First pass: Fill the G-Buffer attachments with positions, normals, albedo and specular values
+		// First render pass: Fill the G-Buffer attachments with positions, normals, albedo and specular values
 
 		// We need to clear all attachments written in the fragment shader
 		std::array<VkClearValue, 4> clearValues;
@@ -641,6 +639,7 @@ public:
 		vkCmdEndRenderPass(commandBuffer);
 
 		// Second render pass: Use the G-Buffer attachments to compose the final scene, applying lighting in screen space
+
 		renderArea = getRenderArea();
 		viewport = getViewport();
 		renderPassBeginInfo = getRenderPassBeginInfo(renderPass, defaultClearValues);

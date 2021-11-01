@@ -180,15 +180,13 @@ public:
 		image.samples = VK_SAMPLE_COUNT_1_BIT;
 		image.tiling = VK_IMAGE_TILING_OPTIMAL;
 		image.usage = usage | VK_IMAGE_USAGE_SAMPLED_BIT;
-
-		VkMemoryAllocateInfo memAlloc = vks::initializers::memoryAllocateInfo();
-		VkMemoryRequirements memReqs;
-
 		VK_CHECK_RESULT(vkCreateImage(device, &image, nullptr, &attachment->image));
-		vkGetImageMemoryRequirements(device, attachment->image, &memReqs);
-		memAlloc.allocationSize = memReqs.size;
-		memAlloc.memoryTypeIndex = vulkanDevice->getMemoryType(memReqs.memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
-		VK_CHECK_RESULT(vkAllocateMemory(device, &memAlloc, nullptr, &attachment->memory));
+		VkMemoryRequirements memRequirements;
+		vkGetImageMemoryRequirements(device, attachment->image, &memRequirements);
+		VkMemoryAllocateInfo memAllocInfo = vks::initializers::memoryAllocateInfo();
+		memAllocInfo.allocationSize = memRequirements.size;
+		memAllocInfo.memoryTypeIndex = vulkanDevice->getMemoryType(memRequirements.memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+		VK_CHECK_RESULT(vkAllocateMemory(device, &memAllocInfo, nullptr, &attachment->memory));
 		VK_CHECK_RESULT(vkBindImageMemory(device, attachment->image, attachment->memory, 0));
 
 		VkImageViewCreateInfo imageView = vks::initializers::imageViewCreateInfo();
