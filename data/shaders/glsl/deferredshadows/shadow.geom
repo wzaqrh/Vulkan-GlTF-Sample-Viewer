@@ -1,15 +1,12 @@
-#version 450
+// Copyright 2021 Sascha Willems
 
-#define LIGHT_COUNT 3
+#version 450
+#extension GL_GOOGLE_include_directive : require
+
+#include "ubo.include.glsl"
 
 layout (triangles, invocations = LIGHT_COUNT) in;
 layout (triangle_strip, max_vertices = 3) out;
-
-layout (binding = 0) uniform UBO 
-{
-	mat4 mvp[LIGHT_COUNT];
-	vec4 instancePos[3];
-} ubo;
 
 layout (location = 0) in int inInstanceIndex[];
 
@@ -20,7 +17,7 @@ void main()
 	{
 		gl_Layer = gl_InvocationID;
 		vec4 tmpPos = gl_in[i].gl_Position + instancedPos;
-		gl_Position = ubo.mvp[gl_InvocationID] * tmpPos;
+		gl_Position = ubo.lights[gl_InvocationID].viewMatrix * tmpPos;
 		EmitVertex();
 	}
 	EndPrimitive();

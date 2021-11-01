@@ -1,34 +1,22 @@
-#version 450
+// Copyright 2021 Sascha Willems
 
-layout (binding = 1) uniform sampler2D samplerposition;
-layout (binding = 2) uniform sampler2D samplerNormal;
-layout (binding = 3) uniform sampler2D samplerAlbedo;
-layout (binding = 5) uniform sampler2DArray samplerShadowMap;
+#version 450
+#extension GL_GOOGLE_include_directive : require
+
+layout (set = 1, binding = 0) uniform sampler2D samplerposition;
+layout (set = 1, binding = 1) uniform sampler2D samplerNormal;
+layout (set = 1, binding = 2) uniform sampler2D samplerAlbedo;
+layout (set = 1, binding = 3) uniform sampler2DArray samplerShadowMap;
 
 layout (location = 0) in vec2 inUV;
 
 layout (location = 0) out vec4 outFragColor;
 
-#define LIGHT_COUNT 3
 #define SHADOW_FACTOR 0.25
 #define AMBIENT_LIGHT 0.1
 #define USE_PCF
 
-struct Light 
-{
-	vec4 position;
-	vec4 target;
-	vec4 color;
-	mat4 viewMatrix;
-};
-
-layout (binding = 4) uniform UBO 
-{
-	vec4 viewPos;
-	Light lights[LIGHT_COUNT];
-	int useShadows;
-	int debugDisplayTarget;
-} ubo;
+#include "ubo.include.glsl"
 
 float textureProj(vec4 P, float layer, vec2 offset)
 {
