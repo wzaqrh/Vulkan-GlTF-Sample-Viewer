@@ -158,7 +158,7 @@ public:
 	void prepare()
 	{
 		VulkanExampleBase::prepare();
-		// Prepare per-frame ressources
+		// Prepare per-frame resources
 		frameObjects.resize(getFrameCount());
 		for (FrameObjects& frame : frameObjects) {
 			createBaseFrameObjects(frame);
@@ -178,7 +178,7 @@ public:
 		VulkanExampleBase::prepareFrame(currentFrame);
 
 		// Update uniform-buffers for the next frame
-		// Calculate two matrcies for the left and right eye for a stereoscopic setup that are passed to the geometry shader
+		// Calculate two matrices for the left and right eye for a stereoscopic setup that are passed to the geometry shader
 		// See http://paulbourke.net/stereographics/stereorender/
 		float aspectRatio = (float)(width * 0.5f) / (float)height;
 		float wd2 = zNear * tan(glm::radians(fov / 2.0f));
@@ -226,7 +226,7 @@ public:
 		vkCmdBeginRenderPass(commandBuffer, &renderPassBeginInfo, VK_SUBPASS_CONTENTS_INLINE);
 		vkCmdSetScissor(commandBuffer, 0, 1, &renderArea);
 
-		// Setup two viewport for each eye of the stereoscopic setup
+		// Set up two viewports for each eye of the stereoscopic setup
 		VkViewport viewports[2];
 		// Left
 		viewports[0] = { 0, 0, (float)width / 2.0f, (float)height, 0.0, 1.0f };
