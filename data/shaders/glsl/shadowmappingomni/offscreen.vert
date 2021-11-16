@@ -18,11 +18,6 @@ layout(push_constant) uniform PushConsts
 	mat4 view;
 } pushConsts;
  
-out gl_PerVertex 
-{
-	vec4 gl_Position;
-};
- 
 void main()
 {
 	gl_Position = ubo.projection * pushConsts.view * ubo.model * vec4(inPos, 1.0);
