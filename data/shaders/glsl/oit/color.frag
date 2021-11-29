@@ -11,7 +11,7 @@ struct Node
 
 layout (location = 0) out vec4 outFragColor;
 
-layout (set = 1, binding = 0, r32ui) uniform uimage2D headIndexImage;
+layout (set = 1, binding = 0, r32ui) uniform coherent uimage2D headIndexImage;
 
 layout (set = 1, binding = 1) buffer LinkedListSBO
 {

@@ -193,19 +193,34 @@ public:
 		VK_CHECK_RESULT(vkCreateFramebuffer(device, &fbufCreateInfo, nullptr, &geometryPass.framebuffer));
 
 		// Create a buffer for GeometrySBO
-		// Using the device memory will be best but I will use the host visible buffer to make this example simple.
+		vks::Buffer stagingBuffer;
+
 		VK_CHECK_RESULT(vulkanDevice->createBuffer(
-			VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
+			VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
 			VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+			&stagingBuffer,
+			sizeof(geometrySBO)));
+		VK_CHECK_RESULT(stagingBuffer.map());
+
+		VK_CHECK_RESULT(vulkanDevice->createBuffer(
+			VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+			VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
 			&geometryPass.geometry,
 			sizeof(geometrySBO)));
-
-		VK_CHECK_RESULT(geometryPass.geometry.map());
 
 		// Set up GeometrySBO data.
 		geometrySBO.count = 0;
 		geometrySBO.maxNodeCount = nodeCount * width * height;
-		memcpy(geometryPass.geometry.mapped, &geometrySBO, sizeof(geometrySBO));
+		memcpy(stagingBuffer.mapped, &geometrySBO, sizeof(geometrySBO));
+
+		// Copy data to device
+		VkCommandBuffer copyCmd = vulkanDevice->createCommandBuffer(VK_COMMAND_BUFFER_LEVEL_PRIMARY, true);
+		VkBufferCopy copyRegion = {};
+		copyRegion.size = sizeof(geometrySBO);
+		vkCmdCopyBuffer(copyCmd, stagingBuffer.buffer, geometryPass.geometry.buffer, 1, &copyRegion);
+		vulkanDevice->flushCommandBuffer(copyCmd, queue, true);
+
+		stagingBuffer.destroy();
 
 		// Create a texture for HeadIndex.
 		// This image will track the head index of each fragment.
@@ -261,11 +276,9 @@ public:
 		// Create a buffer for LinkedListSBO
 		VK_CHECK_RESULT(vulkanDevice->createBuffer(
 			VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
-			VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+			VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
 			&geometryPass.linkedList,
 			sizeof(Node) * geometrySBO.maxNodeCount));
-
-		VK_CHECK_RESULT(geometryPass.linkedList.map());
 
 		// Change HeadIndex image's layout from UNDEFINED to GENERAL
 		VkCommandBufferAllocateInfo cmdBufAllocInfo = vks::initializers::commandBufferAllocateInfo(cmdPool, VK_COMMAND_BUFFER_LEVEL_PRIMARY, 1);
@@ -394,9 +407,6 @@ public:
 
 		VulkanExampleBase::prepareFrame(currentFrame);
 
-		// Clear previous geometry pass data
-		memset(geometryPass.geometry.mapped, 0, sizeof(uint32_t));
-
 		// Update uniform-buffers for the next frame
 		renderPassUBO.projection = camera.matrices.perspective;
 		renderPassUBO.view = camera.matrices.view;
@@ -410,14 +420,6 @@ public:
 		VkRenderPassBeginInfo renderPassBeginInfo = getRenderPassBeginInfo(renderPass, defaultClearValues);
 		VK_CHECK_RESULT(vkBeginCommandBuffer(commandBuffer, &commandBufferBeginInfo));
 		//vkCmdBeginRenderPass(commandBuffer, &renderPassBeginInfo, VK_SUBPASS_CONTENTS_INLINE);
-		vkCmdSetViewport(commandBuffer, 0, 1, &viewport);
-		vkCmdSetScissor(commandBuffer, 0, 1, &renderArea);
-
-		// Bind uniform buffer to set 0
-		vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout, 0, 1, &currentFrame.descriptorSet, 0, nullptr);
-		// Bind geometry buffers to set 1
-		vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout, 1, 1, &geometryDescriptorSet, 0, nullptr);
-
 		VkClearColorValue clearColor;
 		clearColor.uint32[0] = 0xffffffff;
 
@@ -429,6 +431,15 @@ public:
 
 		vkCmdClearColorImage(commandBuffer, geometryPass.headIndex.image, VK_IMAGE_LAYOUT_GENERAL, &clearColor, 1, &subresRange);
 
+		// Clear previous geometry pass data
+		vkCmdFillBuffer(commandBuffer, geometryPass.geometry.buffer, 0, sizeof(uint32_t), 0);
+
+		// We need a barrier to make sure all writes are finished before starting to write again
+		VkMemoryBarrier memoryBarrier = vks::initializers::memoryBarrier();
+		memoryBarrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+		memoryBarrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT;
+		vkCmdPipelineBarrier(commandBuffer, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, 0, 1, &memoryBarrier, 0, nullptr, 0, nullptr);
+
 		// Begin the geometry render pass
 		renderPassBeginInfo.renderPass = geometryPass.renderPass;
 		renderPassBeginInfo.framebuffer = geometryPass.framebuffer;
@@ -436,6 +447,15 @@ public:
 		renderPassBeginInfo.pClearValues = nullptr;
 
 		vkCmdBeginRenderPass(commandBuffer, &renderPassBeginInfo, VK_SUBPASS_CONTENTS_INLINE);
+		
+		vkCmdSetViewport(commandBuffer, 0, 1, &viewport);
+		vkCmdSetScissor(commandBuffer, 0, 1, &renderArea);
+
+		// Bind uniform buffer to set 0
+		vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout, 0, 1, &currentFrame.descriptorSet, 0, nullptr);
+		// Bind geometry buffers to set 1
+		vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout, 1, 1, &geometryDescriptorSet, 0, nullptr);
+
 		vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelines.geometry);
 		uint32_t dynamicOffset = 0;
 		models.sphere.bindBuffers(commandBuffer);
@@ -473,6 +493,12 @@ public:
 
 		// Make a pipeline barrier to guarantee the geometry pass is done
 		vkCmdPipelineBarrier(commandBuffer, VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, 0, 0, nullptr, 0, nullptr, 0, nullptr);
+
+		// We need a barrier to make sure all writes are finished before starting to write again
+		memoryBarrier = vks::initializers::memoryBarrier();
+		memoryBarrier.srcAccessMask = VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT;
+		memoryBarrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT;
+		vkCmdPipelineBarrier(commandBuffer, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, 0, 1, &memoryBarrier, 0, nullptr, 0, nullptr);
 
 		// Begin the color render pass
 		renderPassBeginInfo.renderPass = renderPass;
