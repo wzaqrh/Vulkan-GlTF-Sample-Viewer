@@ -175,7 +175,7 @@ public:
 			vks::tools::exitFatal("Could not get the required function pointers", -1);
 		}
 
-		// Prepare per-frame ressources
+		// Prepare per-frame resources
 		frameObjects.resize(getFrameCount());
 		for (FrameObjects& frame : frameObjects) {
 			createBaseFrameObjects(frame);

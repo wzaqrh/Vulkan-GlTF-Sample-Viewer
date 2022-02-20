@@ -389,7 +389,7 @@ public:
 				&frame.particleBuffer.buffer,
 				&frame.particleBuffer.memory,
 				particles.data()));
-			// Map the memory persitent
+			// Map the memory persistent
 			VK_CHECK_RESULT(vkMapMemory(device, frame.particleBuffer.memory, 0, frame.particleBuffer.size, 0, &frame.particleBuffer.mappedMemory));
 		}
 	}
@@ -397,7 +397,7 @@ public:
 	void prepare()
 	{
 		VulkanExampleBase::prepare();
-		// Prepare per-frame ressources
+		// Prepare per-frame resources
 		frameObjects.resize(getFrameCount());
 		for (FrameObjects& frame : frameObjects) {
 			createBaseFrameObjects(frame);
@@ -456,7 +456,7 @@ public:
 		// Bind the uniform buffers to set 0
 		vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout, 0, 1, &currentFrame.descriptorSet, 0, nullptr);
 
-		// Draw the enviornment
+		// Draw the environment
 		vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelines.environment);
 		environment.draw(commandBuffer, vkglTF::RenderFlags::BindImages, pipelineLayout);
 
