@@ -753,7 +753,7 @@ public:
 		// Each subpass dependency will introduce a memory and execution dependency between the source and dest subpass described by
 		// srcStageMask, dstStageMask, srcAccessMask, dstAccessMask (and dependencyFlags is set)
 		// Note: VK_SUBPASS_EXTERNAL is a special constant that refers to all commands executed outside of the actual renderpass)
-		std::array<VkSubpassDependency, 2> dependencies;
+		std::array<VkSubpassDependency, 2> dependencies{};
 
 		// Dependencies at the start of the renderpass
 		// Does the transition from final to initial layout
