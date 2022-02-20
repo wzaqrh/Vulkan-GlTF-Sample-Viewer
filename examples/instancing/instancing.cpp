@@ -1,9 +1,14 @@
 /*
- * Vulkan Example - Instanced mesh rendering, uses a separate vertex buffer for instanced data
+ * Vulkan Example - Instanced mesh rendering
  *
- * Copyright (C) 2016-2021 by Sascha Willems - www.saschawillems.de
+ * Copyright (C) 2016-2022 by Sascha Willems - www.saschawillems.de
  *
  * This code is licensed under the MIT license (MIT) (http://opensource.org/licenses/MIT)
+ */
+
+/*
+ * Uses the instancing feature for rendering many instances of the same mesh from a single vertex buffer with variable parameters and textures (indexing a layered texture) with attributes sourced from a different buffer
+ * Instanced data is setup as part of the vertex input binding descriptions and passed at instance rate (VK_VERTEX_INPUT_RATE_INSTANCE), see the vertex input binding descriptions in createPipelines
  */
 
 #include "vulkanexamplebase.h"
