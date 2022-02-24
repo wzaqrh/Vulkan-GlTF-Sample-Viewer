@@ -74,7 +74,7 @@ public:
 	VkDescriptorSet cascadesDescriptorSet;
 
 	struct PipelineLayouts {
-		VkPipelineLayout shadowmapGeneration;
+		VkPipelineLayout cascadeGeneration;
 		VkPipelineLayout sceneRendering;
 	} pipelineLayouts;
 
@@ -151,7 +151,7 @@ public:
 			vkDestroyPipeline(device, pipelines.sceneShadow, nullptr);
 			vkDestroyPipeline(device, pipelines.sceneShadowPCF, nullptr);
 			vkDestroyPipelineLayout(device, pipelineLayouts.sceneRendering, nullptr);
-			vkDestroyPipelineLayout(device, pipelineLayouts.shadowmapGeneration, nullptr);
+			vkDestroyPipelineLayout(device, pipelineLayouts.cascadeGeneration, nullptr);
 			vkDestroyDescriptorSetLayout(device, descriptorSetLayouts.images, nullptr);
 			vkDestroyDescriptorSetLayout(device, descriptorSetLayouts.uniformbuffers, nullptr);
 			for (FrameObjects& frame : frameObjects) {
@@ -400,7 +400,7 @@ public:
 		pipelineLayoutCreateInfo = vks::initializers::pipelineLayoutCreateInfo(setLayouts.data(), 2);
 		pipelineLayoutCreateInfo.pushConstantRangeCount = 1;
 		pipelineLayoutCreateInfo.pPushConstantRanges = &pushConstantRange;
-		VK_CHECK_RESULT(vkCreatePipelineLayout(device, &pipelineLayoutCreateInfo, nullptr, &pipelineLayouts.shadowmapGeneration));
+		VK_CHECK_RESULT(vkCreatePipelineLayout(device, &pipelineLayoutCreateInfo, nullptr, &pipelineLayouts.cascadeGeneration));
 
 		VkPipelineInputAssemblyStateCreateInfo inputAssemblyState = vks::initializers::pipelineInputAssemblyStateCreateInfo(VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST, 0, VK_FALSE);
 		VkPipelineRasterizationStateCreateInfo rasterizationState = vks::initializers::pipelineRasterizationStateCreateInfo(VK_POLYGON_MODE_FILL, VK_CULL_MODE_BACK_BIT, VK_FRONT_FACE_CLOCKWISE, 0);
@@ -460,7 +460,7 @@ public:
 		depthStencilState.depthCompareOp = VK_COMPARE_OP_LESS_OR_EQUAL;
 		// Enable depth clamp (if available)
 		rasterizationState.depthClampEnable = deviceFeatures.depthClamp;
-		pipelineCI.layout = pipelineLayouts.shadowmapGeneration;
+		pipelineCI.layout = pipelineLayouts.cascadeGeneration;
 		pipelineCI.renderPass = depth.renderPass;
 		VK_CHECK_RESULT(vkCreateGraphicsPipelines(device, pipelineCache, 1, &pipelineCI, nullptr, &pipelines.cascadeGeneration));
 	}
@@ -599,6 +599,7 @@ public:
 		const VkCommandBufferBeginInfo commandBufferBeginInfo = getCommandBufferBeginInfo();
 		VK_CHECK_RESULT(vkBeginCommandBuffer(commandBuffer, &commandBufferBeginInfo));
 
+
 		VkRenderPassBeginInfo renderPassBeginInfo{};
 		VkRect2D renderArea{};
 		VkViewport viewport{};
@@ -622,13 +623,14 @@ public:
 
 		// One pass per cascade
 		// The layer that this pass renders to is defined by the cascade's image view (selected via the cascade's descriptor set)
-		vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayouts.sceneRendering, 0, 1, &currentFrame.descriptorSet, 0, nullptr); // @todo
+		// Bind the uniform buffer for the current frame
+		vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayouts.cascadeGeneration, 0, 1, &currentFrame.descriptorSet, 0, nullptr);
 		for (uint32_t j = 0; j < shadowMapCascadeCount; j++) {
 			renderPassBeginInfo.framebuffer = cascades[j].frameBuffer;
 			vkCmdBeginRenderPass(commandBuffer, &renderPassBeginInfo, VK_SUBPASS_CONTENTS_INLINE);
 			vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelines.cascadeGeneration );
-			vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayouts.shadowmapGeneration, 1, 1, &cascades[j].descriptorSet, 0, nullptr);
-			renderScene(commandBuffer, pipelineLayouts.shadowmapGeneration, j);
+			vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayouts.cascadeGeneration, 1, 1, &cascades[j].descriptorSet, 0, nullptr);
+			renderScene(commandBuffer, pipelineLayouts.cascadeGeneration, j);
 			vkCmdEndRenderPass(commandBuffer);
 		}
 
