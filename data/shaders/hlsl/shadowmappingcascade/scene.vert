@@ -1,5 +1,8 @@
 // Copyright 2020 Google LLC
 
+// todo: pass via specialization constant
+#define SHADOW_MAP_CASCADE_COUNT 4
+
 struct VSInput
 {
 [[vk::location(0)]] float3 Pos : POSITION0;
@@ -12,6 +15,11 @@ struct UBO  {
 	float4x4 projection;
 	float4x4 view;
 	float4x4 model;
+	float4 lightDir;
+	float4 cascadeSplits;
+	float4x4 cascadeViewProjMat[SHADOW_MAP_CASCADE_COUNT];
+	float4x4 inverseViewMat;
+	int colorCascades;
 };
 
 cbuffer ubo : register(b0) { UBO ubo; }

@@ -2,10 +2,12 @@
 
 #define SHADOW_MAP_CASCADE_COUNT 4
 
-Texture2DArray shadowMapTexture : register(t1);
-SamplerState shadowMapSampler : register(s1);
 Texture2D colorMapTexture : register(t0, space1);
 SamplerState colorMapSampler : register(s0, space1);
+Texture2DArray shadowMapTexture : register(t0, space2);
+SamplerState shadowMapSampler : register(s0, space2);
+// todo: pass via specialization constant
+#define SHADOW_MAP_CASCADE_COUNT 4
 
 struct VSOutput
 {
@@ -21,14 +23,16 @@ struct VSOutput
 #define ambient 0.3
 
 struct UBO {
+	float4x4 projection;
+	float4x4 view;
+	float4x4 model;
+	float4 lightDir;
 	float4 cascadeSplits;
 	float4x4 cascadeViewProjMat[SHADOW_MAP_CASCADE_COUNT];
 	float4x4 inverseViewMat;
-	float3 lightDir;
-	float _pad;
 	int colorCascades;
 };
-cbuffer ubo : register(b2) { UBO ubo; };
+cbuffer ubo : register(b0, space0) { UBO ubo; };
 
 static const float4x4 biasMat = float4x4(
 	0.5, 0.0, 0.0, 0.5,
@@ -101,7 +105,7 @@ float4 main(VSOutput input) : SV_TARGET
 
 	// Directional light
 	float3 N = normalize(input.Normal);
-	float3 L = normalize(-ubo.lightDir);
+	float3 L = normalize(-ubo.lightDir.xyz);
 	float3 H = normalize(L + input.ViewPos);
 	float diffuse = max(dot(N, L), ambient);
 	float3 lightColor = float3(1.0, 1.0, 1.0);

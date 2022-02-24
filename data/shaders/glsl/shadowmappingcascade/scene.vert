@@ -1,14 +1,21 @@
 #version 450
 
+#define SHADOW_MAP_CASCADE_COUNT 4
+
 layout (location = 0) in vec3 inPos;
 layout (location = 1) in vec2 inUV;
 layout (location = 2) in vec3 inColor;
 layout (location = 3) in vec3 inNormal;
 
-layout (binding = 0) uniform UBO {
+layout (set = 0, binding = 0) uniform UBO {
 	mat4 projection;
 	mat4 view;
 	mat4 model;
+	vec4 lightDir;
+	vec4 cascadeSplits;
+	mat4 cascadeViewProjMat[SHADOW_MAP_CASCADE_COUNT];
+	mat4 inverseViewMat;
+	int colorCascades;
 } ubo;
 
 layout (location = 0) out vec3 outNormal;
@@ -21,10 +28,6 @@ layout(push_constant) uniform PushConsts {
 	vec4 position;
 	uint cascadeIndex;
 } pushConsts;
-
-out gl_PerVertex {
-	vec4 gl_Position;   
-};
 
 void main() 
 {

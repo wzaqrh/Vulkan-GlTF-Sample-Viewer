@@ -2,8 +2,8 @@
 
 #define SHADOW_MAP_CASCADE_COUNT 4
 
-layout (set = 0, binding = 1) uniform sampler2DArray shadowMap;
 layout (set = 1, binding = 0) uniform sampler2D colorMap;
+layout (set = 2, binding = 0) uniform sampler2DArray shadowMap;
 
 layout (location = 0) in vec3 inNormal;
 layout (location = 1) in vec3 inColor;
@@ -17,12 +17,14 @@ layout (location = 0) out vec4 outFragColor;
 
 #define ambient 0.3
 
-layout (set = 0, binding = 2) uniform UBO {
+layout (set = 0, binding = 0) uniform UBO {
+	mat4 projection;
+	mat4 view;
+	mat4 model;
+	vec4 lightDir;
 	vec4 cascadeSplits;
 	mat4 cascadeViewProjMat[SHADOW_MAP_CASCADE_COUNT];
 	mat4 inverseViewMat;
-	vec3 lightDir;
-	float _pad;
 	int colorCascades;
 } ubo;
 
@@ -95,7 +97,7 @@ void main()
 
 	// Directional light
 	vec3 N = normalize(inNormal);
-	vec3 L = normalize(-ubo.lightDir);
+	vec3 L = normalize(-ubo.lightDir.xyz);
 	vec3 H = normalize(L + inViewPos);
 	float diffuse = max(dot(N, L), ambient);
 	vec3 lightColor = vec3(1.0);

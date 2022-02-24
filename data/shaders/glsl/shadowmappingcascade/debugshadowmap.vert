@@ -8,10 +8,6 @@ layout(push_constant) uniform PushConsts {
 layout (location = 0) out vec2 outUV;
 layout (location = 1) out uint outCascadeIndex;
 
-out gl_PerVertex {
-	vec4 gl_Position;   
-};
-
 void main() 
 {
 	outUV = vec2((gl_VertexIndex << 1) & 2, gl_VertexIndex & 2);

@@ -11,15 +11,18 @@ layout(push_constant) uniform PushConsts {
 	uint cascadeIndex;
 } pushConsts;
 
-layout (binding = 0) uniform UBO {
-	mat4[SHADOW_MAP_CASCADE_COUNT] cascadeViewProjMat;
+layout (set = 0, binding = 0) uniform UBO {
+	mat4 projection;
+	mat4 view;
+	mat4 model;
+	vec4 lightDir;
+	vec4 cascadeSplits;
+	mat4 cascadeViewProjMat[SHADOW_MAP_CASCADE_COUNT];
+	mat4 inverseViewMat;
+	int colorCascades;
 } ubo;
 
 layout (location = 0) out vec2 outUV;
-
-out gl_PerVertex {
-	vec4 gl_Position;   
-};
 
 void main()
 {
