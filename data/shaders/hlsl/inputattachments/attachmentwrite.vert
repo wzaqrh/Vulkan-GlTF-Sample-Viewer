@@ -11,6 +11,9 @@ struct UBO  {
 	float4x4 projection;
 	float4x4 model;
 	float4x4 view;
+	float2 brightnessContrast;
+	float2 range;
+	int attachmentIndex;
 };
 
 cbuffer ubo : register(b0) { UBO ubo; }

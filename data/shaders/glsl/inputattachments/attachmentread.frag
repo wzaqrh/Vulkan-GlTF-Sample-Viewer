@@ -3,11 +3,15 @@
 layout (input_attachment_index = 0, binding = 0) uniform subpassInput inputColor;
 layout (input_attachment_index = 1, binding = 1) uniform subpassInput inputDepth;
 
-layout (binding = 2) uniform UBO {
+layout (set = 1, binding = 0) uniform UBO {
+	mat4 projection;
+	mat4 model;
+	mat4 view;
 	vec2 brightnessContrast;
 	vec2 range;
 	int attachmentIndex;
 } ubo;
+
 
 layout (location = 0) out vec4 outColor;
 

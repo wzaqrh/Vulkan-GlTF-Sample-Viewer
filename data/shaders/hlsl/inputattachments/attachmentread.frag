@@ -4,12 +4,15 @@
 [[vk::input_attachment_index(1)]][[vk::binding(1)]] SubpassInput inputDepth;
 
 struct UBO  {
+	float4x4 projection;
+	float4x4 model;
+	float4x4 view;
 	float2 brightnessContrast;
 	float2 range;
 	int attachmentIndex;
 };
 
-cbuffer ubo : register(b2) { UBO ubo; }
+cbuffer ubo : register(b0, space1) { UBO ubo; }
 
 float3 brightnessContrast(float3 color, float brightness, float contrast) {
 	return (color - 0.5) * contrast + 0.5 + brightness;
