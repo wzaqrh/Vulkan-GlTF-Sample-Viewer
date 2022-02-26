@@ -223,13 +223,31 @@ public:
 		subpass.pColorAttachments = &colorReference;
 		subpass.pDepthStencilAttachment = &depthReference;
 
-		VkRenderPassCreateInfo renderPassCreateInfo = vks::initializers::renderPassCreateInfo();
-		renderPassCreateInfo.attachmentCount = static_cast<uint32_t>(attachmentDescription.size());
-		renderPassCreateInfo.pAttachments = attachmentDescription.data();
-		renderPassCreateInfo.subpassCount = 1;
-		renderPassCreateInfo.pSubpasses = &subpass;
+		// Use subpass dependencies for layout transitions and proper synchronization between the multiple cube map face generation render passes
+		std::array<VkSubpassDependency, 2> dependencies{};
+		// Color attachment
+		dependencies[0].srcSubpass = VK_SUBPASS_EXTERNAL;
+		dependencies[0].dstSubpass = 0;
+		dependencies[0].srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+		dependencies[0].dstStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+		dependencies[0].srcAccessMask = 0;
+		dependencies[0].dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT | VK_ACCESS_COLOR_ATTACHMENT_READ_BIT;
+		// Depth attachment
+		dependencies[1].srcSubpass = VK_SUBPASS_EXTERNAL;
+		dependencies[1].dstSubpass = 0;
+		dependencies[1].srcStageMask = VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT | VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT;
+		dependencies[1].dstStageMask = VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT | VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT;
+		dependencies[1].srcAccessMask = VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
+		dependencies[1].dstAccessMask = VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT | VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_READ_BIT;
 
-		VK_CHECK_RESULT(vkCreateRenderPass(device, &renderPassCreateInfo, nullptr, &shadowPass.renderPass));
+		VkRenderPassCreateInfo renderPassCI = vks::initializers::renderPassCreateInfo();
+		renderPassCI.attachmentCount = static_cast<uint32_t>(attachmentDescription.size());
+		renderPassCI.pAttachments = attachmentDescription.data();
+		renderPassCI.subpassCount = 1;
+		renderPassCI.pSubpasses = &subpass;
+		renderPassCI.dependencyCount = static_cast<uint32_t>(dependencies.size());
+		renderPassCI.pDependencies = dependencies.data();
+		VK_CHECK_RESULT(vkCreateRenderPass(device, &renderPassCI, nullptr, &shadowPass.renderPass));
 
 		// Create the per-frame offscreen framebuffers for rendering the depth information from the light's point-of-view to
 		// This will later on be used to sample from in the fragment shader of the shadowing pass
@@ -536,24 +554,12 @@ public:
 
 		// Render scene from cube face's point of view
 		vkCmdBeginRenderPass(currentFrame.commandBuffer, &renderPassBeginInfo, VK_SUBPASS_CONTENTS_INLINE);
-
-		// Update shader push constant block
-		// Contains current face view matrix
-		vkCmdPushConstants(
-			currentFrame.commandBuffer,
-			pipelineLayouts.offscreen,
-			VK_SHADER_STAGE_VERTEX_BIT,
-			0,
-			sizeof(glm::mat4),
-			&viewMatrix);
-
+		// Update shader push constant block that passes the view matrix for the current face to the shader
+		vkCmdPushConstants(currentFrame.commandBuffer, pipelineLayouts.offscreen, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(glm::mat4), &viewMatrix);
 		vkCmdBindPipeline(currentFrame.commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelines.offscreen);
 		vkCmdBindDescriptorSets(currentFrame.commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayouts.offscreen, 0, 1, &currentFrame.descriptorSets.shadow, 0, nullptr);
 		scene.draw(currentFrame.commandBuffer);
-
 		vkCmdEndRenderPass(currentFrame.commandBuffer);
-
-		// @todo: sub pass dependencies
 
 		// Make sure color writes to the framebuffer are finished before using it as transfer source
 		vks::tools::setImageLayout(
