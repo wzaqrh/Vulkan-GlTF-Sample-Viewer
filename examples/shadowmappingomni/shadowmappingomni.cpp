@@ -114,11 +114,11 @@ public:
 			vkDestroyImageView(device, shadowCubeMap.view, nullptr);
 			vkDestroyImage(device, shadowCubeMap.image, nullptr);
 			vkDestroySampler(device, shadowCubeMap.sampler, nullptr);
-			vkDestroyFramebuffer(device, shadowCueMapPass.frameBuffer, nullptr);
-			vkDestroyRenderPass(device, shadowCueMapPass.renderPass, nullptr);
+			vkDestroyFramebuffer(device, shadowCubeMapPass.frameBuffer, nullptr);
+			vkDestroyRenderPass(device, shadowCubeMapPass.renderPass, nullptr);
 			vkFreeMemory(device, shadowCubeMap.memory, nullptr);
-			shadowCueMapPass.color.destroy(device);
-			shadowCueMapPass.depth.destroy(device);
+			shadowCubeMapPass.color.destroy(device);
+			shadowCubeMapPass.depth.destroy(device);
 			// Pipelines
 			vkDestroyPipeline(device, pipelines.scene, nullptr);
 			vkDestroyPipeline(device, pipelines.offscreen, nullptr);
@@ -245,7 +245,7 @@ public:
 		renderPassCI.pSubpasses = &subpass;
 		renderPassCI.dependencyCount = static_cast<uint32_t>(dependencies.size());
 		renderPassCI.pDependencies = dependencies.data();
-		VK_CHECK_RESULT(vkCreateRenderPass(device, &renderPassCI, nullptr, &shadowCueMapPass.renderPass));
+		VK_CHECK_RESULT(vkCreateRenderPass(device, &renderPassCI, nullptr, &shadowCubeMapPass.renderPass));
 
 		// Create the per-frame offscreen attachments for rendering the depth information from the light's point-of-view to
 		// This will later on be used to sample from in the fragment shader of the shadowing pass
@@ -265,14 +265,14 @@ public:
 		imageCI.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
 		imageCI.usage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT;
 		imageCI.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
-		VK_CHECK_RESULT(vkCreateImage(device, &imageCI, nullptr, &shadowCueMapPass.color.image));
+		VK_CHECK_RESULT(vkCreateImage(device, &imageCI, nullptr, &shadowCubeMapPass.color.image));
 
 		memAllocInfo = vks::initializers::memoryAllocateInfo();
-		vkGetImageMemoryRequirements(device, shadowCueMapPass.color.image, &memReqs);
+		vkGetImageMemoryRequirements(device, shadowCubeMapPass.color.image, &memReqs);
 		memAllocInfo.allocationSize = memReqs.size;
 		memAllocInfo.memoryTypeIndex = vulkanDevice->getMemoryType(memReqs.memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
-		VK_CHECK_RESULT(vkAllocateMemory(device, &memAllocInfo, nullptr, &shadowCueMapPass.color.memory));
-		VK_CHECK_RESULT(vkBindImageMemory(device, shadowCueMapPass.color.image, shadowCueMapPass.color.memory, 0));
+		VK_CHECK_RESULT(vkAllocateMemory(device, &memAllocInfo, nullptr, &shadowCubeMapPass.color.memory));
+		VK_CHECK_RESULT(vkBindImageMemory(device, shadowCubeMapPass.color.image, shadowCubeMapPass.color.memory, 0));
 
 		VkImageViewCreateInfo colorImageView = vks::initializers::imageViewCreateInfo();
 		colorImageView.viewType = VK_IMAGE_VIEW_TYPE_2D;
@@ -284,8 +284,8 @@ public:
 		colorImageView.subresourceRange.levelCount = 1;
 		colorImageView.subresourceRange.baseArrayLayer = 0;
 		colorImageView.subresourceRange.layerCount = 1;
-		colorImageView.image = shadowCueMapPass.color.image;
-		VK_CHECK_RESULT(vkCreateImageView(device, &colorImageView, nullptr, &shadowCueMapPass.color.view));
+		colorImageView.image = shadowCubeMapPass.color.image;
+		VK_CHECK_RESULT(vkCreateImageView(device, &colorImageView, nullptr, &shadowCubeMapPass.color.view));
 
 		// Create a depth image that can be sampled in a shader as we only need depth information for shadow mapping
 		imageCI = vks::initializers::imageCreateInfo();
@@ -299,14 +299,14 @@ public:
 		imageCI.tiling = VK_IMAGE_TILING_OPTIMAL;
 		imageCI.format = shadowMapFormat;
 		imageCI.usage = VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT;
-		VK_CHECK_RESULT(vkCreateImage(device, &imageCI, nullptr, &shadowCueMapPass.depth.image));
+		VK_CHECK_RESULT(vkCreateImage(device, &imageCI, nullptr, &shadowCubeMapPass.depth.image));
 
 		memAllocInfo = vks::initializers::memoryAllocateInfo();
-		vkGetImageMemoryRequirements(device, shadowCueMapPass.depth.image, &memReqs);
+		vkGetImageMemoryRequirements(device, shadowCubeMapPass.depth.image, &memReqs);
 		memAllocInfo.allocationSize = memReqs.size;
 		memAllocInfo.memoryTypeIndex = vulkanDevice->getMemoryType(memReqs.memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
-		VK_CHECK_RESULT(vkAllocateMemory(device, &memAllocInfo, nullptr, &shadowCueMapPass.depth.memory));
-		VK_CHECK_RESULT(vkBindImageMemory(device, shadowCueMapPass.depth.image, shadowCueMapPass.depth.memory, 0));
+		VK_CHECK_RESULT(vkAllocateMemory(device, &memAllocInfo, nullptr, &shadowCubeMapPass.depth.memory));
+		VK_CHECK_RESULT(vkBindImageMemory(device, shadowCubeMapPass.depth.image, shadowCubeMapPass.depth.memory, 0));
 
 		// Create the image View
 		VkImageViewCreateInfo depthStencilView = vks::initializers::imageViewCreateInfo();
@@ -318,23 +318,23 @@ public:
 		depthStencilView.subresourceRange.levelCount = 1;
 		depthStencilView.subresourceRange.baseArrayLayer = 0;
 		depthStencilView.subresourceRange.layerCount = 1;
-		depthStencilView.image = shadowCueMapPass.depth.image;
-		VK_CHECK_RESULT(vkCreateImageView(device, &depthStencilView, nullptr, &shadowCueMapPass.depth.view));
+		depthStencilView.image = shadowCubeMapPass.depth.image;
+		VK_CHECK_RESULT(vkCreateImageView(device, &depthStencilView, nullptr, &shadowCubeMapPass.depth.view));
 
 		// Create the frame buffer
 
 		VkImageView attachments[2];
-		attachments[0] = shadowCueMapPass.color.view;
-		attachments[1] = shadowCueMapPass.depth.view;
+		attachments[0] = shadowCubeMapPass.color.view;
+		attachments[1] = shadowCubeMapPass.depth.view;
 
 		VkFramebufferCreateInfo fbufCreateInfo = vks::initializers::framebufferCreateInfo();
-		fbufCreateInfo.renderPass = shadowCueMapPass.renderPass;
+		fbufCreateInfo.renderPass = shadowCubeMapPass.renderPass;
 		fbufCreateInfo.attachmentCount = 2;
 		fbufCreateInfo.pAttachments = attachments;
 		fbufCreateInfo.width = shadowMapExtent.width;
 		fbufCreateInfo.height = shadowMapExtent.height;
 		fbufCreateInfo.layers = 1;
-		VK_CHECK_RESULT(vkCreateFramebuffer(device, &fbufCreateInfo, nullptr, &shadowCueMapPass.frameBuffer));
+		VK_CHECK_RESULT(vkCreateFramebuffer(device, &fbufCreateInfo, nullptr, &shadowCubeMapPass.frameBuffer));
 	
 		// Create the sampler used to sample from the depth attachment in the scene rendering pass
 		// Check if the current implementation supports linear filtering for the desired shadow map format
@@ -462,7 +462,7 @@ public:
 		shaderStages[0] = loadShader(getShadersPath() + "shadowmappingomni/offscreen.vert.spv", VK_SHADER_STAGE_VERTEX_BIT);
 		shaderStages[1] = loadShader(getShadersPath() + "shadowmappingomni/offscreen.frag.spv", VK_SHADER_STAGE_FRAGMENT_BIT);
 		pipelineCI.layout = pipelineLayouts.offscreen;
-		pipelineCI.renderPass = shadowCueMapPass.renderPass;
+		pipelineCI.renderPass = shadowCubeMapPass.renderPass;
 		VK_CHECK_RESULT(vkCreateGraphicsPipelines(device, pipelineCache, 1, &pipelineCI, nullptr, &pipelines.offscreen));
 
 		// Cube map display pipeline
@@ -508,8 +508,8 @@ public:
 
 		VkRenderPassBeginInfo renderPassBeginInfo = vks::initializers::renderPassBeginInfo();
 		// Reuse render pass from example pass
-		renderPassBeginInfo.renderPass = shadowCueMapPass.renderPass;
-		renderPassBeginInfo.framebuffer = shadowCueMapPass.frameBuffer;
+		renderPassBeginInfo.renderPass = shadowCubeMapPass.renderPass;
+		renderPassBeginInfo.framebuffer = shadowCubeMapPass.frameBuffer;
 		renderPassBeginInfo.renderArea.extent.width = shadowMapExtent.width;
 		renderPassBeginInfo.renderArea.extent.height = shadowMapExtent.height;
 		renderPassBeginInfo.clearValueCount = 2;
@@ -554,7 +554,7 @@ public:
 		// Make sure color writes to the framebuffer are finished before using it as transfer source
 		vks::tools::setImageLayout(
 			currentFrame.commandBuffer,
-			shadowCueMapPass.color.image,
+			shadowCubeMapPass.color.image,
 			VK_IMAGE_ASPECT_COLOR_BIT,
 			VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
 			VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL);
@@ -596,7 +596,7 @@ public:
 		// Put image copy into command buffer
 		vkCmdCopyImage(
 			currentFrame.commandBuffer,
-			shadowCueMapPass.color.image,
+			shadowCubeMapPass.color.image,
 			VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
 			shadowCubeMap.image,
 			VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
@@ -606,7 +606,7 @@ public:
 		// Transform framebuffer color attachment back
 		vks::tools::setImageLayout(
 			currentFrame.commandBuffer,
-			shadowCueMapPass.color.image,
+			shadowCubeMapPass.color.image,
 			VK_IMAGE_ASPECT_COLOR_BIT,
 			VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
 			VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL);
