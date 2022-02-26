@@ -1,7 +1,7 @@
 // Copyright 2020 Google LLC
 
-Texture2DArray textureArray : register(t1);
-SamplerState samplerArray : register(s1);
+Texture2DArray textureArray : register(t0, space1);
+SamplerState samplerArray : register(s0, space1);
 
 struct VSOutput
 {
