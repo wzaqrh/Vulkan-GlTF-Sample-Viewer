@@ -1,7 +1,7 @@
 // Copyright 2020 Google LLC
 
-TextureCube shadowCubeMapTexture : register(t1);
-SamplerState shadowCubeMapSampler : register(s1);
+TextureCube shadowCubeMapTexture : register(t0, space1);
+SamplerState shadowCubeMapSampler : register(s0, space1);
 
 float4 main([[vk::location(0)]] float2 inUV : TEXCOORD0) : SV_TARGET
 {

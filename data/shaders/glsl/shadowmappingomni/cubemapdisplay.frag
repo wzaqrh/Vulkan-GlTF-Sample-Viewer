@@ -1,6 +1,6 @@
 #version 450
 
-layout (binding = 1) uniform samplerCube shadowCubeMap;
+layout (set = 1, binding = 0) uniform samplerCube shadowCubeMap;
 
 layout (location = 0) in vec2 inUV;
 

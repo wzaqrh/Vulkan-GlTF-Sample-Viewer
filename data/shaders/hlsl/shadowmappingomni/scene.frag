@@ -1,7 +1,7 @@
 // Copyright 2020 Google LLC
 
-TextureCube shadowCubeMapTexture : register(t1);
-SamplerState shadowCubeMapSampler : register(s1);
+TextureCube shadowCubeMapTexture : register(t0, space1);
+SamplerState shadowCubeMapSampler : register(s0, space1);
 
 struct VSOutput
 {

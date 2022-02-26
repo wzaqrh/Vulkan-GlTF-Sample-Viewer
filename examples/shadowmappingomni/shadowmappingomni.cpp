@@ -1,13 +1,15 @@
 /*
  * Vulkan Example - Omni directional shadows using a dynamic cube map
  *
- * Copyright (C) 2016-2021 by Sascha Willems - www.saschawillems.de
+ * Copyright (C) 2016-2022 by Sascha Willems - www.saschawillems.de
  *
  * This code is licensed under the MIT license (MIT) (http://opensource.org/licenses/MIT)
  */
 
 /*
- * @todo
+ * This sample shows how to apply omni-directional shadows to a scene.
+ * It renders a 360° view of the scene from a light's point-of-view into a cubemap image (see updateCubeFace).
+ * This cube map is then sourced for shadowing in the final scene rendering pass.
  */
 
 #include "vulkanexamplebase.h"
@@ -15,22 +17,18 @@
 
 #define ENABLE_VALIDATION false
 
-#define FB_COLOR_FORMAT VK_FORMAT_R32_SFLOAT
-
 class VulkanExample : public VulkanExampleBase
 {
 public:
-	VkExtent2D shadowMapExtent = { 1024, 1024 }; // @todo
-	// @todo
-	VkFormat shadowMapFormat = VK_FORMAT_R32_SFLOAT;
+	VkExtent2D shadowMapExtent = { 1024, 1024 };
+	VkFormat shadowMapFormat{};
 
 	bool displayShadowCubemap = false;
 	glm::vec4 lightPos = glm::vec4(0.0f, -2.5f, 0.0f, 1.0);
 
-	// @todo
 	// We keep depth range as small as possible for better shadow map precision
 	float zNear = 0.1f;
-	float zFar = 1024.0f;
+	float zFar = 64.0f;
 
 	vkglTF::Model scene;
 
@@ -52,6 +50,8 @@ public:
 		} descriptorSets;
 	};
 	std::vector<FrameObjects> frameObjects;
+	// The descriptor for the shadow cube map is static, and not required to be per-frame
+	VkDescriptorSet shadowcubemapDescriptorSet;
 
 	struct Pipelines {
 		VkPipeline scene;
@@ -64,15 +64,18 @@ public:
 		VkPipelineLayout offscreen;
 	} pipelineLayouts;
 
-	VkDescriptorSetLayout descriptorSetLayout;
+	struct DescriptorSetLayouts {
+		VkDescriptorSetLayout uniformbuffers;
+		VkDescriptorSetLayout shadowcubemap;
+	} descriptorSetLayouts;
 
-	// @todo: maybe replace with explicit struct
-	vks::Texture shadowCubeMap;
-
-	VkFormat fbDepthFormat;
-
-	// @todo
-	VkSampler shadowCubemapSampler;
+	// Holds the Vulkan objects for the shadow cubemap's offscreen framebuffer
+	struct ShadowCubeMap {
+		VkDeviceMemory memory;
+		VkImage image;
+		VkImageView view;
+		VkSampler sampler;
+	} shadowCubeMap;
 
 	// Holds the Vulkan objects to store an offscreen framebuffer for rendering the depth map to
 	// This will then be sampled as the shadow map during scene rendering
@@ -80,13 +83,16 @@ public:
 		VkDeviceMemory memory;
 		VkImage image;
 		VkImageView view;
+		void destroy(VkDevice device) {
+			vkDestroyImage(device, image, nullptr);
+			vkDestroyImageView(device, view, nullptr);
+			vkFreeMemory(device, memory, nullptr);
+		}
 	};
 	struct ShadowPass {
-		VkExtent2D Size;
 		VkFramebuffer frameBuffer;
 		FrameBufferAttachment color, depth;
 		VkRenderPass renderPass;
-		VkSampler sampler;
 	} shadowPass;
 
 	VulkanExample() : VulkanExampleBase(ENABLE_VALIDATION)
@@ -107,33 +113,22 @@ public:
 			vkDestroyImageView(device, shadowCubeMap.view, nullptr);
 			vkDestroyImage(device, shadowCubeMap.image, nullptr);
 			vkDestroySampler(device, shadowCubeMap.sampler, nullptr);
-			vkFreeMemory(device, shadowCubeMap.deviceMemory, nullptr);
-			// Frame buffer
-			// Color attachment
-			//vkDestroyImageView(device, offscreenPass.color.view, nullptr);
-			//vkDestroyImage(device, offscreenPass.color.image, nullptr);
-			//vkFreeMemory(device, offscreenPass.color.memory, nullptr);
-			// Depth attachment
-			//vkDestroyImageView(device, offscreenPass.depth.view, nullptr);
-			//vkDestroyImage(device, offscreenPass.depth.image, nullptr);
-			//vkFreeMemory(device, offscreenPass.depth.memory, nullptr);
-			//vkDestroyFramebuffer(device, offscreenPass.frameBuffer, nullptr);
-			//vkDestroyRenderPass(device, shadowCubemapRenderPass, nullptr);
+			vkDestroyFramebuffer(device, shadowPass.frameBuffer, nullptr);
+			vkDestroyRenderPass(device, shadowPass.renderPass, nullptr);
+			vkFreeMemory(device, shadowCubeMap.memory, nullptr);
+			shadowPass.color.destroy(device);
+			shadowPass.depth.destroy(device);
 			// Pipelines
 			vkDestroyPipeline(device, pipelines.scene, nullptr);
 			vkDestroyPipeline(device, pipelines.offscreen, nullptr);
 			vkDestroyPipeline(device, pipelines.cubemapDisplay, nullptr);
 			vkDestroyPipelineLayout(device, pipelineLayouts.scene, nullptr);
 			vkDestroyPipelineLayout(device, pipelineLayouts.offscreen, nullptr);
-			vkDestroyDescriptorSetLayout(device, descriptorSetLayout, nullptr);
+			vkDestroyDescriptorSetLayout(device, descriptorSetLayouts.uniformbuffers, nullptr);
+			vkDestroyDescriptorSetLayout(device, descriptorSetLayouts.shadowcubemap, nullptr);
 			for (FrameObjects& frame : frameObjects) {
 				frame.uniformBuffers.scene.destroy();
 				frame.uniformBuffers.shadow.destroy();
-				// @todo
-				//vkDestroyImageView(device, frame.shadowMapFramebuffer.view, nullptr);
-				//vkDestroyImage(device, frame.shadowMapFramebuffer.image, nullptr);
-				//vkFreeMemory(device, frame.shadowMapFramebuffer.memory, nullptr);
-				//vkDestroyFramebuffer(device, frame.shadowMapFramebuffer.handle, nullptr);
 				destroyBaseFrameObjects(frame);
 			}
 		}
@@ -161,47 +156,21 @@ public:
 		VkMemoryAllocateInfo memAllocInfo = vks::initializers::memoryAllocateInfo();
 		VkMemoryRequirements memReqs;
 
-		VkCommandBuffer layoutCmd = vulkanDevice->createCommandBuffer(VK_COMMAND_BUFFER_LEVEL_PRIMARY, true);
-
 		vkGetImageMemoryRequirements(device, shadowCubeMap.image, &memReqs);
-
 		memAllocInfo.allocationSize = memReqs.size;
 		memAllocInfo.memoryTypeIndex = vulkanDevice->getMemoryType(memReqs.memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
-		VK_CHECK_RESULT(vkAllocateMemory(device, &memAllocInfo, nullptr, &shadowCubeMap.deviceMemory));
-		VK_CHECK_RESULT(vkBindImageMemory(device, shadowCubeMap.image, shadowCubeMap.deviceMemory, 0));
+		VK_CHECK_RESULT(vkAllocateMemory(device, &memAllocInfo, nullptr, &shadowCubeMap.memory));
+		VK_CHECK_RESULT(vkBindImageMemory(device, shadowCubeMap.image, shadowCubeMap.memory, 0));
 
 		// Image barrier for optimal image (target)
+		VkCommandBuffer layoutCmd = vulkanDevice->createCommandBuffer(VK_COMMAND_BUFFER_LEVEL_PRIMARY, true);
 		VkImageSubresourceRange subresourceRange = {};
 		subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
 		subresourceRange.baseMipLevel = 0;
 		subresourceRange.levelCount = 1;
 		subresourceRange.layerCount = 6;
-		vks::tools::setImageLayout(
-			layoutCmd,
-			shadowCubeMap.image,
-			VK_IMAGE_LAYOUT_UNDEFINED,
-			VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
-			subresourceRange);
-
+		vks::tools::setImageLayout(layoutCmd, shadowCubeMap.image, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, subresourceRange);
 		vulkanDevice->flushCommandBuffer(layoutCmd, queue, true);
-
-		// Create the sampler used to sample from the cube map attachment in the scene rendering pass
-		// Check if the current implementation supports linear filtering for the desired shadow map format
-		VkFilter shadowmapFilter = vks::tools::formatIsFilterable(physicalDevice, shadowMapFormat, VK_IMAGE_TILING_OPTIMAL) ? VK_FILTER_LINEAR : VK_FILTER_NEAREST;
-		VkSamplerCreateInfo sampler = vks::initializers::samplerCreateInfo();
-		sampler.magFilter = shadowmapFilter;
-		sampler.minFilter = shadowmapFilter;
-		sampler.mipmapMode = VK_SAMPLER_MIPMAP_MODE_LINEAR;
-		sampler.addressModeU = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_BORDER;
-		sampler.addressModeV = sampler.addressModeU;
-		sampler.addressModeW = sampler.addressModeU;
-		sampler.mipLodBias = 0.0f;
-		sampler.maxAnisotropy = 1.0f;
-		sampler.compareOp = VK_COMPARE_OP_NEVER;
-		sampler.minLod = 0.0f;
-		sampler.maxLod = 1.0f;
-		sampler.borderColor = VK_BORDER_COLOR_FLOAT_OPAQUE_WHITE;
-		VK_CHECK_RESULT(vkCreateSampler(device, &sampler, nullptr, &shadowCubeMap.sampler));
 
 		// Create image view
 		VkImageViewCreateInfo view = vks::initializers::imageViewCreateInfo();
@@ -221,17 +190,13 @@ public:
 	{
 		std::array<VkAttachmentDescription,2> attachmentDescription{};
 
-		// Find a suitable depth format
-		VkBool32 validDepthFormat = vks::tools::getSupportedDepthFormat(physicalDevice, &fbDepthFormat);
-		assert(validDepthFormat);
-
-		attachmentDescription[0].format = FB_COLOR_FORMAT;
+		attachmentDescription[0].format = VK_FORMAT_R32_SFLOAT;
 		attachmentDescription[0].samples = VK_SAMPLE_COUNT_1_BIT;
 		attachmentDescription[0].loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
 		attachmentDescription[0].storeOp = VK_ATTACHMENT_STORE_OP_STORE;
 		attachmentDescription[0].stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
 		attachmentDescription[0].stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
-		attachmentDescription[0].initialLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+		attachmentDescription[0].initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
 		attachmentDescription[0].finalLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
 
 		// Depth attachment
@@ -241,7 +206,7 @@ public:
 		attachmentDescription[1].storeOp = VK_ATTACHMENT_STORE_OP_STORE;
 		attachmentDescription[1].stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
 		attachmentDescription[1].stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
-		attachmentDescription[1].initialLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+		attachmentDescription[1].initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
 		attachmentDescription[1].finalLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
 
 		VkAttachmentReference colorReference = {};
@@ -266,17 +231,13 @@ public:
 
 		VK_CHECK_RESULT(vkCreateRenderPass(device, &renderPassCreateInfo, nullptr, &shadowPass.renderPass));
 
-		// @todo: comment is wrong
-		// reate the per-frame offscreen framebuffers for rendering the depth information from the light's point-of-view to
-		// The depth attachment of that framebuffer will then be used to sample from in the fragment shader of the shadowing pass
+		// Create the per-frame offscreen framebuffers for rendering the depth information from the light's point-of-view to
+		// This will later on be used to sample from in the fragment shader of the shadowing pass
 
-		// Color
-		VkFormat fbColorFormat = FB_COLOR_FORMAT;
-
-		// Color attachment
+		// Color attachment using a single 32 bit float channel to store world positions
 		VkImageCreateInfo imageCreateInfo = vks::initializers::imageCreateInfo();
 		imageCreateInfo.imageType = VK_IMAGE_TYPE_2D;
-		imageCreateInfo.format = fbColorFormat;
+		imageCreateInfo.format = VK_FORMAT_R32_SFLOAT;
 		imageCreateInfo.extent.width = shadowMapExtent.width;
 		imageCreateInfo.extent.height = shadowMapExtent.height;
 		imageCreateInfo.extent.depth = 1;
@@ -302,7 +263,7 @@ public:
 
 		VkImageViewCreateInfo colorImageView = vks::initializers::imageViewCreateInfo();
 		colorImageView.viewType = VK_IMAGE_VIEW_TYPE_2D;
-		colorImageView.format = fbColorFormat;
+		colorImageView.format = VK_FORMAT_R32_SFLOAT;
 		colorImageView.flags = 0;
 		colorImageView.subresourceRange = {};
 		colorImageView.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
@@ -313,7 +274,7 @@ public:
 		colorImageView.image = shadowPass.color.image;
 		VK_CHECK_RESULT(vkCreateImageView(device, &colorImageView, nullptr, &shadowPass.color.view));
 
-	// Create a depth image that can be sampled in a shader as we only need depth information for shadow mapping
+		// Create a depth image that can be sampled in a shader as we only need depth information for shadow mapping
 		VkImageCreateInfo image = vks::initializers::imageCreateInfo();
 		image.imageType = VK_IMAGE_TYPE_2D;
 		image.extent.width = shadowMapExtent.width;
@@ -378,7 +339,7 @@ public:
 		sampler.minLod = 0.0f;
 		sampler.maxLod = 1.0f;
 		sampler.borderColor = VK_BORDER_COLOR_FLOAT_OPAQUE_WHITE;
-		VK_CHECK_RESULT(vkCreateSampler(device, &sampler, nullptr, &shadowCubemapSampler));
+		VK_CHECK_RESULT(vkCreateSampler(device, &sampler, nullptr, &shadowCubeMap.sampler));
 	}
 
 	void loadAssets()
@@ -395,71 +356,67 @@ public:
 			vks::initializers::descriptorPoolSize(VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 3 * 100),
 			vks::initializers::descriptorPoolSize(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 2 * 100)
 		};
-		VkDescriptorPoolCreateInfo descriptorPoolInfo = vks::initializers::descriptorPoolCreateInfo(poolSizes.size(), poolSizes.data(), 3 * 100);
+		VkDescriptorPoolCreateInfo descriptorPoolInfo = vks::initializers::descriptorPoolCreateInfo(poolSizes, 3 * 100);
 		VK_CHECK_RESULT(vkCreateDescriptorPool(device, &descriptorPoolInfo, nullptr, &descriptorPool));
 		
-		// Layout
-		// Shared pipeline layout
-		std::vector<VkDescriptorSetLayoutBinding> setLayoutBindings = {
-			// Binding 0 : Vertex shader uniform buffer
-			vks::initializers::descriptorSetLayoutBinding(VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, VK_SHADER_STAGE_VERTEX_BIT, 0),
-			// Binding 1 : Fragment shader image sampler (cube map)
-			vks::initializers::descriptorSetLayoutBinding(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_SHADER_STAGE_FRAGMENT_BIT, 1)
-		};
+		// Layouts
+		VkDescriptorSetLayoutCreateInfo descriptorSetLayoutCI{};
+		VkDescriptorSetLayoutBinding setLayoutBinding{};
 
-		VkDescriptorSetLayoutCreateInfo descriptorLayout = vks::initializers::descriptorSetLayoutCreateInfo(setLayoutBindings.data(), setLayoutBindings.size());
-		VK_CHECK_RESULT(vkCreateDescriptorSetLayout(device, &descriptorLayout, nullptr, &descriptorSetLayout));
+		// Layout for the per-frame uniform buffers
+		setLayoutBinding = vks::initializers::descriptorSetLayoutBinding(VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, VK_SHADER_STAGE_VERTEX_BIT, 0);
+		descriptorSetLayoutCI = vks::initializers::descriptorSetLayoutCreateInfo(setLayoutBinding);
+		VK_CHECK_RESULT(vkCreateDescriptorSetLayout(device, &descriptorSetLayoutCI, nullptr, &descriptorSetLayouts.uniformbuffers));
+
+		// Layout for the shadow map image
+		setLayoutBinding = vks::initializers::descriptorSetLayoutBinding(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_SHADER_STAGE_FRAGMENT_BIT, 0);
+		descriptorSetLayoutCI = vks::initializers::descriptorSetLayoutCreateInfo(setLayoutBinding);
+		VK_CHECK_RESULT(vkCreateDescriptorSetLayout(device, &descriptorSetLayoutCI, nullptr, &descriptorSetLayouts.shadowcubemap));
 
 		// Sets
+		// Per-frame for dynamic uniform buffers
 		for (FrameObjects& frame : frameObjects) {
-			std::vector<VkWriteDescriptorSet> writeDescriptorSets;
-			VkDescriptorSetAllocateInfo allocInfo = vks::initializers::descriptorSetAllocateInfo(descriptorPool, &descriptorSetLayout, 1);
+			VkWriteDescriptorSet writeDescriptorSet{};
+			VkDescriptorSetAllocateInfo allocInfo{};
 
-			// Offscreen depth map generation
+			// Offscreen depth cube map generation
+			allocInfo = vks::initializers::descriptorSetAllocateInfo(descriptorPool, &descriptorSetLayouts.uniformbuffers, 1);
 			VK_CHECK_RESULT(vkAllocateDescriptorSets(device, &allocInfo, &frame.descriptorSets.shadow));
-			writeDescriptorSets = {
-				// Binding 0 : Vertex shader uniform buffer
-				vks::initializers::writeDescriptorSet(frame.descriptorSets.shadow, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 0, &frame.uniformBuffers.shadow.descriptor),
-			};
-			vkUpdateDescriptorSets(device, static_cast<uint32_t>(writeDescriptorSets.size()), writeDescriptorSets.data(), 0, nullptr);
+			writeDescriptorSet = vks::initializers::writeDescriptorSet(frame.descriptorSets.shadow, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 0, &frame.uniformBuffers.shadow.descriptor);
+			vkUpdateDescriptorSets(device, 1, &writeDescriptorSet, 0, nullptr);
 
-			// Image descriptor for the shadow map attachment
-			//VkDescriptorImageInfo shadowMapDescriptor = vks::initializers::descriptorImageInfo(shadowMapSampler, frame.shadowMapFramebuffer.view, VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL);
-
-			// Image descriptor for the cube map
-			VkDescriptorImageInfo shadowCubeMapDescriptor =
-				vks::initializers::descriptorImageInfo(
-					shadowCubeMap.sampler,
-					shadowCubeMap.view,
-					VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
-
-			// Scene rendering with shadow map applied
+			// Scene rendering with shadow cube map applied
 			VK_CHECK_RESULT(vkAllocateDescriptorSets(device, &allocInfo, &frame.descriptorSets.scene));
-			writeDescriptorSets = {
-				// Binding 0 : Vertex shader Uniform buffer
-				vks::initializers::writeDescriptorSet(frame.descriptorSets.scene, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 0, &frame.uniformBuffers.scene.descriptor),
-				// Binding 1 : Current shadow map image
-				vks::initializers::writeDescriptorSet(frame.descriptorSets.scene, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, &shadowCubeMapDescriptor)
-			};
-			vkUpdateDescriptorSets(device, static_cast<uint32_t>(writeDescriptorSets.size()), writeDescriptorSets.data(), 0, nullptr);
+			writeDescriptorSet = vks::initializers::writeDescriptorSet(frame.descriptorSets.scene, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 0, &frame.uniformBuffers.scene.descriptor);
+			vkUpdateDescriptorSets(device, 1, &writeDescriptorSet, 0, nullptr);
+
 		}
+
+		// Global set for the shadow cube map image
+		VkDescriptorSetAllocateInfo allocInfo = vks::initializers::descriptorSetAllocateInfo(descriptorPool, &descriptorSetLayouts.shadowcubemap, 1);
+		VK_CHECK_RESULT(vkAllocateDescriptorSets(device, &allocInfo, &shadowcubemapDescriptorSet));
+		VkDescriptorImageInfo shadowCubeMapDescriptor = vks::initializers::descriptorImageInfo(shadowCubeMap.sampler, shadowCubeMap.view, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+		VkWriteDescriptorSet writeDescriptorSet = vks::initializers::writeDescriptorSet(shadowcubemapDescriptorSet, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 0, &shadowCubeMapDescriptor);
+		vkUpdateDescriptorSets(device, 1, &writeDescriptorSet, 0, nullptr);
 	}
 
 	void createPipelines()
 	{
 		// Layouts
+		// @todo
 		// 3D scene pipeline layout
-		VkPipelineLayoutCreateInfo pPipelineLayoutCreateInfo = vks::initializers::pipelineLayoutCreateInfo(&descriptorSetLayout, 1);
-		VK_CHECK_RESULT(vkCreatePipelineLayout(device, &pPipelineLayoutCreateInfo, nullptr, &pipelineLayouts.scene));
+		std::vector<VkDescriptorSetLayout> setLayouts = { descriptorSetLayouts.uniformbuffers, descriptorSetLayouts.shadowcubemap };
+		VkPipelineLayoutCreateInfo pipelineLayoutCreateInfo = vks::initializers::pipelineLayoutCreateInfo(setLayouts.data(), 2);
+		VK_CHECK_RESULT(vkCreatePipelineLayout(device, &pipelineLayoutCreateInfo, nullptr, &pipelineLayouts.scene));
 
 		// Offscreen pipeline layout
+		pipelineLayoutCreateInfo = vks::initializers::pipelineLayoutCreateInfo(&descriptorSetLayouts.uniformbuffers, 1);
 		// Push constants for cube map face view matrices
 		VkPushConstantRange pushConstantRange = vks::initializers::pushConstantRange(VK_SHADER_STAGE_VERTEX_BIT, sizeof(glm::mat4), 0);
 		// Push constant ranges are part of the pipeline layout
-		pPipelineLayoutCreateInfo.pushConstantRangeCount = 1;
-		pPipelineLayoutCreateInfo.pPushConstantRanges = &pushConstantRange;
-		VK_CHECK_RESULT(vkCreatePipelineLayout(device, &pPipelineLayoutCreateInfo, nullptr, &pipelineLayouts.offscreen));
-
+		pipelineLayoutCreateInfo.pushConstantRangeCount = 1;
+		pipelineLayoutCreateInfo.pPushConstantRanges = &pushConstantRange;
+		VK_CHECK_RESULT(vkCreatePipelineLayout(device, &pipelineLayoutCreateInfo, nullptr, &pipelineLayouts.offscreen));
 
 		// Pipelines
 		VkPipelineInputAssemblyStateCreateInfo inputAssemblyState = vks::initializers::pipelineInputAssemblyStateCreateInfo(VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST, 0, VK_FALSE);
@@ -470,14 +427,8 @@ public:
 		VkPipelineViewportStateCreateInfo viewportState = vks::initializers::pipelineViewportStateCreateInfo(1, 1, 0);
 		VkPipelineMultisampleStateCreateInfo multisampleState = vks::initializers::pipelineMultisampleStateCreateInfo(VK_SAMPLE_COUNT_1_BIT, 0);
 		std::vector<VkDynamicState> dynamicStateEnables = { VK_DYNAMIC_STATE_VIEWPORT, VK_DYNAMIC_STATE_SCISSOR };
-		VkPipelineDynamicStateCreateInfo dynamicState = vks::initializers::pipelineDynamicStateCreateInfo(dynamicStateEnables.data(), dynamicStateEnables.size(), 0);
-
-		// 3D scene pipeline
-		// Load shaders
+		VkPipelineDynamicStateCreateInfo dynamicState = vks::initializers::pipelineDynamicStateCreateInfo(dynamicStateEnables);
 		std::array<VkPipelineShaderStageCreateInfo, 2> shaderStages;
-
-		shaderStages[0] = loadShader(getShadersPath() + "shadowmappingomni/scene.vert.spv", VK_SHADER_STAGE_VERTEX_BIT);
-		shaderStages[1] = loadShader(getShadersPath() + "shadowmappingomni/scene.frag.spv", VK_SHADER_STAGE_FRAGMENT_BIT);
 
 		VkGraphicsPipelineCreateInfo pipelineCI = vks::initializers::pipelineCreateInfo(pipelineLayouts.scene, renderPass, 0);
 		pipelineCI.pInputAssemblyState = &inputAssemblyState;
@@ -487,9 +438,13 @@ public:
 		pipelineCI.pViewportState = &viewportState;
 		pipelineCI.pDepthStencilState = &depthStencilState;
 		pipelineCI.pDynamicState = &dynamicState;
-		pipelineCI.stageCount = shaderStages.size();
+		pipelineCI.stageCount = static_cast<uint32_t>(shaderStages.size());
 		pipelineCI.pStages = shaderStages.data();
 		pipelineCI.pVertexInputState = vkglTF::Vertex::getPipelineVertexInputState({vkglTF::VertexComponent::Position, vkglTF::VertexComponent::Color, vkglTF::VertexComponent::Normal});
+
+		// 3D scene pipelinewe
+		shaderStages[0] = loadShader(getShadersPath() + "shadowmappingomni/scene.vert.spv", VK_SHADER_STAGE_VERTEX_BIT);
+		shaderStages[1] = loadShader(getShadersPath() + "shadowmappingomni/scene.frag.spv", VK_SHADER_STAGE_FRAGMENT_BIT);
 		VK_CHECK_RESULT(vkCreateGraphicsPipelines(device, pipelineCache, 1, &pipelineCI, nullptr, &pipelines.scene));
 
 		// Offscreen pipeline
@@ -521,11 +476,11 @@ public:
 			VK_CHECK_RESULT(vulkanDevice->createAndMapBuffer(VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, &frame.uniformBuffers.scene, sizeof(UniformData)));
 			VK_CHECK_RESULT(vulkanDevice->createAndMapBuffer(VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, &frame.uniformBuffers.shadow, sizeof(UniformData)));
 		}
+
 		// Get a supported depth format that we can use for the shadow maps @todo
-		// @todo
 		VkBool32 validDepthFormat = vks::tools::getSupportedDepthFormat(physicalDevice, &shadowMapFormat);
-		shadowMapFormat = VK_FORMAT_D32_SFLOAT;
 		assert(validDepthFormat);
+
 		loadAssets();
 		createSadowCubemapObjects();
 		prepareCubeMap();
@@ -669,7 +624,6 @@ public:
 			cubeFaceSubresourceRange);
 	}
 
-
 	virtual void render()
 	{
 		FrameObjects currentFrame = frameObjects[getCurrentFrameIndex()];
@@ -677,14 +631,19 @@ public:
 		VulkanExampleBase::prepareFrame(currentFrame);
 
 		// Update uniform-buffers for the next frame
+		if (!paused) {
+			lightPos.x = sin(glm::radians(timer * 360.0f)) * 0.15f;
+			lightPos.z = cos(glm::radians(timer * 360.0f)) * 0.15f;
+		}
+
+		// Uniform data used for rendering the final scene
 		uniformDataScene.projection = camera.matrices.perspective;
 		uniformDataScene.view       = camera.matrices.view;
 		uniformDataScene.model      = glm::mat4(1.0f);
 		uniformDataScene.lightPos   = lightPos;
 		memcpy(currentFrame.uniformBuffers.scene.mapped, &uniformDataScene, sizeof(uniformDataScene));
 
-		lightPos.x = sin(glm::radians(timer * 360.0f)) * 0.15f;
-		lightPos.z = cos(glm::radians(timer * 360.0f)) * 0.15f;
+		// Uniform data for shadow cube map generation
 		uniformDataShadow.projection = glm::perspective((float)(M_PI / 2.0), 1.0f, zNear, zFar);
 		uniformDataShadow.view       = glm::mat4(1.0f);
 		uniformDataShadow.model      = glm::translate(glm::mat4(1.0f), glm::vec3(-lightPos.x, -lightPos.y, -lightPos.z));
@@ -696,54 +655,43 @@ public:
 		const VkCommandBufferBeginInfo commandBufferBeginInfo = getCommandBufferBeginInfo();
 		VK_CHECK_RESULT(vkBeginCommandBuffer(commandBuffer, &commandBufferBeginInfo));
 
-		/*
-			Generate shadow cube maps using one render pass per face
-		*/
-		
-		{
-			const VkViewport viewport = vks::initializers::viewport((float)shadowMapExtent.width, (float)shadowMapExtent.height, 0.0f, 1.0f);
-			const VkRect2D scissor = vks::initializers::rect2D(shadowMapExtent.width, shadowMapExtent.height, 0, 0);
-			vkCmdSetViewport(commandBuffer, 0, 1, &viewport);
-			vkCmdSetScissor(commandBuffer, 0, 1, &scissor);
-			for (uint32_t face = 0; face < 6; face++) {
-				updateCubeFace(face, currentFrame);
-			}
+		VkViewport viewport{};
+		VkRect2D renderArea{};
+
+		// First set of render passes: Generate shadow cube maps using one render pass per face
+		viewport = vks::initializers::viewport((float)shadowMapExtent.width, (float)shadowMapExtent.height, 0.0f, 1.0f);
+		renderArea = vks::initializers::rect2D(shadowMapExtent.width, shadowMapExtent.height, 0, 0);
+		vkCmdSetViewport(commandBuffer, 0, 1, &viewport);
+		vkCmdSetScissor(commandBuffer, 0, 1, &renderArea);
+		for (uint32_t face = 0; face < 6; face++) {
+			updateCubeFace(face, currentFrame);
 		}
 
-		/*
-			Note: Explicit synchronization is not required between the render pass, as this is done implicit via sub pass dependencies
-		*/
+		// Final render pass: Scene rendering with applied shadow map
+		// Note: Explicit synchronization is not required between the render pass, as this is done implicit via sub pass dependencies
+		const VkRenderPassBeginInfo renderPassBeginInfo = getRenderPassBeginInfo(renderPass, defaultClearValues);
+		vkCmdBeginRenderPass(commandBuffer, &renderPassBeginInfo, VK_SUBPASS_CONTENTS_INLINE);
 
-		/*
-			Scene rendering with applied shadow map
-		*/
-		{
-			const VkRenderPassBeginInfo renderPassBeginInfo = getRenderPassBeginInfo(renderPass, defaultClearValues);
-			vkCmdBeginRenderPass(commandBuffer, &renderPassBeginInfo, VK_SUBPASS_CONTENTS_INLINE);
+		viewport = getViewport();
+		renderArea = getRenderArea();
+		vkCmdSetViewport(commandBuffer, 0, 1, &viewport);
+		vkCmdSetScissor(commandBuffer, 0, 1, &renderArea);
 
-			VkViewport viewport = vks::initializers::viewport((float)width, (float)height, 0.0f, 1.0f);
-			vkCmdSetViewport(commandBuffer, 0, 1, &viewport);
+		vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayouts.scene, 0, 1, &currentFrame.descriptorSets.scene, 0, nullptr);
+		vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayouts.scene, 1, 1, &shadowcubemapDescriptorSet, 0, nullptr);
 
-			VkRect2D scissor = vks::initializers::rect2D(width, height, 0, 0);
-			vkCmdSetScissor(commandBuffer, 0, 1, &scissor);
-
-			VkDeviceSize offsets[1] = { 0 };
-
-			vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayouts.scene, 0, 1, &currentFrame.descriptorSets.scene, 0, nullptr);
-
-			if (displayShadowCubemap) {
-				// Display all six sides of the shadow cube map
-				// Note: Visualization of the different faces is done in the fragment shader, see cubemapdisplay.frag
-				vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelines.cubemapDisplay);
-				vkCmdDraw(commandBuffer, 6, 1, 0, 0);
-			} else {
-				vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelines.scene);
-				scene.draw(commandBuffer);
-			}
-
-			drawUI(commandBuffer);
-			vkCmdEndRenderPass(commandBuffer);
+		if (displayShadowCubemap) {
+			// Display all six sides of the shadow cube map
+			// Note: Visualization of the different faces is done in the fragment shader, see cubemapdisplay.frag
+			vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelines.cubemapDisplay);
+			vkCmdDraw(commandBuffer, 6, 1, 0, 0);
+		} else {
+			vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelines.scene);
+			scene.draw(commandBuffer);
 		}
+
+		drawUI(commandBuffer);
+		vkCmdEndRenderPass(commandBuffer);
 
 		VK_CHECK_RESULT(vkEndCommandBuffer(commandBuffer));
 
