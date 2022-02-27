@@ -5,10 +5,11 @@ layout (location = 1) in vec3 inNormal;
 
 layout (constant_id = 0) const int type = 0;
 
-layout (binding = 0) uniform UBO {
+layout (set = 0, binding = 0) uniform UBO {
 	mat4 projection;
 	mat4 modelview;
 	mat4 inverseModelview;
+	float exposure;
 } ubo;
 
 layout (location = 0) out vec3 outUVW;
@@ -16,11 +17,6 @@ layout (location = 1) out vec3 outPos;
 layout (location = 2) out vec3 outNormal;
 layout (location = 3) out vec3 outViewVec;
 layout (location = 4) out vec3 outLightVec;
-
-out gl_PerVertex
-{
-	vec4 gl_Position;
-};
 
 void main()
 {
