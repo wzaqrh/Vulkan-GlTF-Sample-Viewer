@@ -4,6 +4,9 @@ layout (set = 1, binding = 0) uniform sampler2D samplerColor;
 
 layout (set = 0, binding = 0) uniform UBO 
 {
+	mat4 projection;
+	mat4 view;
+	mat4 model;
 	float blurScale;
 	float blurStrength;
 } ubo;

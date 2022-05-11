@@ -14,5 +14,6 @@ layout (location = 0) out vec3 outUVW;
 void main() 
 {
 	outUVW = inPos;
-	gl_Position = ubo.projection * ubo.view * ubo.model * vec4(inPos.xyz, 1.0);
+	// mat4(mat3()) cancels out the translation part of the view matrix
+	gl_Position = ubo.projection * mat4(mat3(ubo.view)) * vec4(inPos.xyz, 1.0);
 }

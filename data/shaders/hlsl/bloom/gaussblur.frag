@@ -5,6 +5,9 @@ SamplerState samplerColor : register(s0, space1);
 
 cbuffer UBO : register(b0, space0)
 {
+	float4x4 projection;
+	float4x4 view;
+	float4x4 model;
 	float blurScale;
 	float blurStrength;
 };
