@@ -1,8 +1,5 @@
 // Copyright 2020 Google LLC
 
-Texture2D colorMapTexture : register(t1);
-SamplerState colorMapSampler : register(s1);
-
 struct VSOutput
 {
 	[[vk::location(0)]]float3 Color : COLOR0;

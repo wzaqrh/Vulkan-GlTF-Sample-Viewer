@@ -1,9 +1,9 @@
 // Copyright 2020 Google LLC
 
-Texture2D textureColor : register(t1);
-SamplerState samplerColor : register(s1);
+Texture2D textureColor : register(t0, space1);
+SamplerState samplerColor : register(s0, space1);
 
-cbuffer UBO : register(b0)
+cbuffer UBO : register(b0, space0)
 {
 	float blurScale;
 	float blurStrength;
