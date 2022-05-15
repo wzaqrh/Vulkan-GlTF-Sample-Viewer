@@ -12,8 +12,6 @@
  * Those are then combined in a final composition pass for the scene visible on the screen
  */
 
-// @todo: proper resize
-
 #include "vulkanexamplebase.h"
 #include "VulkanglTFModel.h"
 
@@ -389,6 +387,11 @@ public:
 		samplerCI.maxLod = 1.0f;
 		samplerCI.borderColor = VK_BORDER_COLOR_FLOAT_OPAQUE_WHITE;
 		VK_CHECK_RESULT(vkCreateSampler(device, &samplerCI, nullptr, &sampler));
+
+		// Name some important Vulkan objects for debugging tools
+		vks::debugmarker::setImageName(device, offscreenPass.albedo.image, "G-Buffer color");
+		vks::debugmarker::setImageName(device, offscreenPass.highlights.image, "G-Buffer highlights");
+		vks::debugmarker::setImageName(device, filterPass.color.image, "Bloom target");
 	}
 
 	void loadAssets()
@@ -610,10 +613,6 @@ public:
 		createOffscreenObjects();
 		createDescriptors();
 		createPipelines();
-		// Neme some important Vulkan objects for debugging tools
-		vks::debugmarker::setImageName(device, offscreenPass.albedo.image, "G-Buffer color");
-		vks::debugmarker::setImageName(device, offscreenPass.highlights.image, "G-Buffer highlights");
-		vks::debugmarker::setImageName(device, filterPass.color.image, "Bloom target");
 		prepared = true;
 	}
 
