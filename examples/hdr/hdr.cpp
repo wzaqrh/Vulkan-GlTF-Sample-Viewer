@@ -6,11 +6,11 @@
  * This code is licensed under the MIT license (MIT) (http://opensource.org/licenses/MIT)
  */
 
- /*
-  * This sample implements a high dynamic range rendering pipeline with based on a deferred G-Buffer setup with a post-processing bloom effect
-  * The scene is rendered to multiple render targets at once (MRT) to fill color and bright highlight (for bloom) targets
-  * Those are then combined in a final composition pass for the scene visible on the screen
-  */
+/*
+ * This sample implements a high dynamic range rendering pipeline with based on a deferred G-Buffer setup with a post-processing bloom effect
+ * The scene is rendered to multiple render targets at once (MRT) to fill color and bright highlight (for bloom) targets
+ * Those are then combined in a final composition pass for the scene visible on the screen
+ */
 
 // @todo: proper resize
 
@@ -536,7 +536,7 @@ public:
 		shaderStages[1] = loadShader(getShadersPath() + "hdr/composition.frag.spv", VK_SHADER_STAGE_FRAGMENT_BIT);
 		VK_CHECK_RESULT(vkCreateGraphicsPipelines(device, pipelineCache, 1, &pipelineCI, nullptr, &pipelines.composition));
 
-		// Bloom pass
+		// Bloom post processing
 		shaderStages[0] = loadShader(getShadersPath() + "hdr/bloom.vert.spv", VK_SHADER_STAGE_VERTEX_BIT);
 		shaderStages[1] = loadShader(getShadersPath() + "hdr/bloom.frag.spv", VK_SHADER_STAGE_FRAGMENT_BIT);
 		colorBlendStateCI.pAttachments = &blendAttachmentState;
@@ -548,18 +548,22 @@ public:
 		blendAttachmentState.alphaBlendOp = VK_BLEND_OP_ADD;
 		blendAttachmentState.srcAlphaBlendFactor = VK_BLEND_FACTOR_SRC_ALPHA;
 		blendAttachmentState.dstAlphaBlendFactor = VK_BLEND_FACTOR_DST_ALPHA;
-
 		// Set constant parameters via specialization constants
+		uint32_t dir{};
 		specializationMapEntries[0] = vks::initializers::specializationMapEntry(0, 0, sizeof(uint32_t));
-		uint32_t dir = 1;
 		specializationInfo = vks::initializers::specializationInfo(1, specializationMapEntries.data(), sizeof(dir), &dir);
 		shaderStages[1].pSpecializationInfo = &specializationInfo;
-		VK_CHECK_RESULT(vkCreateGraphicsPipelines(device, pipelineCache, 1, &pipelineCI, nullptr, &pipelines.bloom[0]));
 
-		// Second blur pass (into separate framebuffer)
+		// First vertical bloom pass
 		pipelineCI.renderPass = filterPass.renderPass;
 		dir = 0;
+		VK_CHECK_RESULT(vkCreateGraphicsPipelines(device, pipelineCache, 1, &pipelineCI, nullptr, &pipelines.bloom[0]));
+
+		// Second horizontal blur pass
+		pipelineCI.renderPass = renderPass;
+		dir = 1;
 		VK_CHECK_RESULT(vkCreateGraphicsPipelines(device, pipelineCache, 1, &pipelineCI, nullptr, &pipelines.bloom[1]));
+
 
 		// Object rendering pipelines
 		// Use vertex input state from glTF model setup
@@ -630,9 +634,9 @@ public:
 		const VkCommandBufferBeginInfo commandBufferBeginInfo = getCommandBufferBeginInfo();
 		VK_CHECK_RESULT(vkBeginCommandBuffer(commandBuffer, &commandBufferBeginInfo));
 
+		// First render pass:
+		// Render scene to offscreen framebuffer, filling the color (albedo) and bloom highlights attachments
 		{
-			// First pass: Render scene to offscreen framebuffer
-
 			std::array<VkClearValue, 3> clearValues;
 			clearValues[0].color = { { 0.0f, 0.0f, 0.0f, 0.0f } };
 			clearValues[1].color = { { 0.0f, 0.0f, 0.0f, 0.0f } };
@@ -646,34 +650,28 @@ public:
 			renderPassBeginInfo.clearValueCount = 3;
 			renderPassBeginInfo.pClearValues = clearValues.data();
 
-			vkCmdBeginRenderPass(commandBuffer, &renderPassBeginInfo, VK_SUBPASS_CONTENTS_INLINE);
-
 			VkViewport viewport = vks::initializers::viewport((float)offscreenPass.width, (float)offscreenPass.height, 0.0f, 1.0f);
-			vkCmdSetViewport(commandBuffer, 0, 1, &viewport);
-
 			VkRect2D scissor = vks::initializers::rect2D(offscreenPass.width, offscreenPass.height, 0, 0);
-			vkCmdSetScissor(commandBuffer, 0, 1, &scissor);
 
+			vkCmdBeginRenderPass(commandBuffer, &renderPassBeginInfo, VK_SUBPASS_CONTENTS_INLINE);
+			vkCmdSetViewport(commandBuffer, 0, 1, &viewport);
+			vkCmdSetScissor(commandBuffer, 0, 1, &scissor);
 			vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayouts.models, 0, 1, &frameObjects[0].descriptorSet, 0, nullptr);
 			vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayouts.models, 1, 1, &staticDescriptorSets.cubeMapImage, 0, nullptr);
-
 			// Skybox
 			if (displaySkybox) {
 				vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelines.skybox);
 				models.skybox.draw(commandBuffer);
 			}
-
 			// 3D object
 			vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayouts.models, 0, 1, &frameObjects[0].descriptorSet, 0, nullptr);
 			vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelines.reflect);
 			models.objects[models.objectIndex].draw(commandBuffer);
-
 			vkCmdEndRenderPass(commandBuffer);
 		}
 
-		/*
-			Second render pass: First bloom pass
-		*/
+		// Second render pass: 
+		// First bloom pass
 		if (bloom) {
 			VkClearValue clearValues[2];
 			clearValues[0].color = { { 0.0f, 0.0f, 0.0f, 0.0f } };
@@ -687,65 +685,39 @@ public:
 			renderPassBeginInfo.renderArea.extent = bloomExtent;
 			renderPassBeginInfo.pClearValues = clearValues;
 
-			vkCmdBeginRenderPass(commandBuffer, &renderPassBeginInfo, VK_SUBPASS_CONTENTS_INLINE);
-
-			VkViewport viewport = vks::initializers::viewport((float)bloomExtent.width, (float)bloomExtent.height, 0.0f, 1.0f);
-			vkCmdSetViewport(commandBuffer, 0, 1, &viewport);
-
 			VkRect2D scissor = vks::initializers::rect2D(bloomExtent.width, bloomExtent.height, 0, 0);
+			VkViewport viewport = vks::initializers::viewport((float)bloomExtent.width, (float)bloomExtent.height, 0.0f, 1.0f);
+
+			vkCmdBeginRenderPass(commandBuffer, &renderPassBeginInfo, VK_SUBPASS_CONTENTS_INLINE);
+			vkCmdSetViewport(commandBuffer, 0, 1, &viewport);
 			vkCmdSetScissor(commandBuffer, 0, 1, &scissor);
-
 			vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayouts.offscreenImages, 0, 1, &staticDescriptorSets.offscreenImages, 0, nullptr);
-
-			vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelines.bloom[1]);
+			vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelines.bloom[0]);
 			vkCmdDraw(commandBuffer, 3, 1, 0, 0);
-
 			vkCmdEndRenderPass(commandBuffer);
 		}
 
-		/*
-			Note: Explicit synchronization is not required between the render pass, as this is done implicit via sub pass dependencies
-		*/
-
-		/*
-			Third render pass: Scene rendering with applied second bloom pass (when enabled)
-		*/
+		// Third render pass: 
+		// Scene rendering with applied second bloom pass (when enabled)
+		// Note: Explicit synchronization is not required between the render pass, as this is done implicit via sub pass dependencies
 		{
-			VkClearValue clearValues[2];
-			clearValues[0].color = { { 0.0f, 0.0f, 0.0f, 0.0f } };
-			clearValues[1].depthStencil = { 1.0f, 0 };
-
-			// Final composition
-			VkRenderPassBeginInfo renderPassBeginInfo = vks::initializers::renderPassBeginInfo();
-			renderPassBeginInfo.framebuffer = frameBuffers[currentBuffer];
-			renderPassBeginInfo.renderPass = renderPass;
-			renderPassBeginInfo.clearValueCount = 2;
-			renderPassBeginInfo.renderArea.extent.width = width;
-			renderPassBeginInfo.renderArea.extent.height = height;
-			renderPassBeginInfo.pClearValues = clearValues;
+			const VkRect2D renderArea = getRenderArea();
+			const VkViewport viewport = getViewport();
+			const VkRenderPassBeginInfo renderPassBeginInfo = getRenderPassBeginInfo(renderPass, defaultClearValues);
 
 			vkCmdBeginRenderPass(commandBuffer, &renderPassBeginInfo, VK_SUBPASS_CONTENTS_INLINE);
-
-			VkViewport viewport = vks::initializers::viewport((float)width, (float)height, 0.0f, 1.0f);
 			vkCmdSetViewport(commandBuffer, 0, 1, &viewport);
-
-			VkRect2D scissor = vks::initializers::rect2D(width, height, 0, 0);
-			vkCmdSetScissor(commandBuffer, 0, 1, &scissor);
-
+			vkCmdSetScissor(commandBuffer, 0, 1, &renderArea);
 			vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayouts.offscreenImages, 0, 1, &staticDescriptorSets.compositionImages, 0, nullptr);
-
-			// Scene
+			// Draw the scene from the offscreen color attachment using a fullscreen quad
 			vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelines.composition);
 			vkCmdDraw(commandBuffer, 3, 1, 0, 0);
-
-			// Bloom
+			// Blend bloom image on top of the scene
 			if (bloom) {
-				vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelines.bloom[0]);
+				vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelines.bloom[1]);
 				vkCmdDraw(commandBuffer, 3, 1, 0, 0);
 			}
-
 			drawUI(commandBuffer);
-
 			vkCmdEndRenderPass(commandBuffer);
 		}
 
