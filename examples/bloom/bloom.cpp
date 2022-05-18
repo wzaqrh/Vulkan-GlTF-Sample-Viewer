@@ -299,19 +299,19 @@ public:
 		VK_CHECK_RESULT(vkCreateRenderPass(device, &renderPassInfo, nullptr, &offscreen.renderPass));
 
 		// Create sampler to sample from the color attachments
-		VkSamplerCreateInfo sampler = vks::initializers::samplerCreateInfo();
-		sampler.magFilter = VK_FILTER_LINEAR;
-		sampler.minFilter = VK_FILTER_LINEAR;
-		sampler.mipmapMode = VK_SAMPLER_MIPMAP_MODE_LINEAR;
-		sampler.addressModeU = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
-		sampler.addressModeV = sampler.addressModeU;
-		sampler.addressModeW = sampler.addressModeU;
-		sampler.mipLodBias = 0.0f;
-		sampler.maxAnisotropy = 1.0f;
-		sampler.minLod = 0.0f;
-		sampler.maxLod = 1.0f;
-		sampler.borderColor = VK_BORDER_COLOR_FLOAT_OPAQUE_WHITE;
-		VK_CHECK_RESULT(vkCreateSampler(device, &sampler, nullptr, &offscreen.sampler));
+		VkSamplerCreateInfo samplerCI = vks::initializers::samplerCreateInfo();
+		samplerCI.magFilter = VK_FILTER_LINEAR;
+		samplerCI.minFilter = VK_FILTER_LINEAR;
+		samplerCI.mipmapMode = VK_SAMPLER_MIPMAP_MODE_LINEAR;
+		samplerCI.addressModeU = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+		samplerCI.addressModeV = samplerCI.addressModeU;
+		samplerCI.addressModeW = samplerCI.addressModeU;
+		samplerCI.mipLodBias = 0.0f;
+		samplerCI.maxAnisotropy = 1.0f;
+		samplerCI.minLod = 0.0f;
+		samplerCI.maxLod = 1.0f;
+		samplerCI.borderColor = VK_BORDER_COLOR_FLOAT_OPAQUE_WHITE;
+		VK_CHECK_RESULT(vkCreateSampler(device, &samplerCI, nullptr, &offscreen.sampler));
 
 		// Create two frame buffers, one for the vertical and one for the horizontal blur of the bloom
 		prepareOffscreenFramebuffer(&offscreen.framebuffers[0], fbColorFormat, fbDepthFormat);
