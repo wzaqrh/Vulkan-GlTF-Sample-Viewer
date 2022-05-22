@@ -7,7 +7,7 @@
  */
 
 /*
- *  @todo
+ * Shows how to use the dynamic rendering extension that replaces render passes with a simplified api
  */
 
 #include "vulkanexamplebase.h"
