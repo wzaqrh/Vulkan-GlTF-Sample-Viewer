@@ -349,8 +349,8 @@ void VulkanExample::createDescriptors()
 	// One ubo to pass dynamic data to the shader
 	// Two combined image samplers per material as each material uses color and normal maps
 	std::vector<VkDescriptorPoolSize> poolSizes = {
-		vks::initializers::descriptorPoolSize(VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1),
-		vks::initializers::descriptorPoolSize(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, static_cast<uint32_t>(scene.materials.size()) * 2),
+		vks::initializers::descriptorPoolSize(VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, getFrameCount()),
+		vks::initializers::descriptorPoolSize(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, static_cast<uint32_t>(scene.materials.size()) * 2), // Color and normal map per material
 	};
 	// One set for matrices and one per model image/texture
 	const uint32_t maxSetCount = static_cast<uint32_t>(scene.images.size()) + 1;
@@ -561,6 +561,7 @@ void VulkanExample::render()
 	}
 
 	drawUI(commandBuffer);
+	vkCmdEndRenderPass(commandBuffer);
 	VK_CHECK_RESULT(vkEndCommandBuffer(commandBuffer));
 	VulkanExampleBase::submitFrame(currentFrame);
 }
