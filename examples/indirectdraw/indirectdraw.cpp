@@ -4,23 +4,15 @@
  * Copyright (C) 2016-2022 by Sascha Willems - www.saschawillems.de
  *
  * This code is licensed under the MIT license (MIT) (http://opensource.org/licenses/MIT)
- *
- * Summary:
- * Use a device local buffer that stores draw commands for instanced rendering of different meshes stored
- * in the same buffer.
- *
- * Indirect drawing offloads draw command generation and offers the ability to update them on the GPU
- * without the CPU having to touch the buffer again, also reducing the number of drawcalls.
- *
- * The example shows how to setup and fill such a buffer on the CPU side, stages it to the device and
- * shows how to render it using only one draw command.
- *
- * See readme.md for details
- *
  */
 
 /* 
- * @todo
+ * This sample shows how to display a dense instanced scene using indirect draw commands
+ * Indirect drawing offloads draw command generation and offers the ability to update them on the GPU
+ * without the CPU having to touch the buffer again, also reducing the number of drawcalls.
+ * The example shows how to setup and fill such a buffer on the CPU side, stages it to the device and
+ * shows how to render it using only one draw command.
+ * See readme.md for more details
  */
 
 #include "vulkanexamplebase.h"
@@ -28,20 +20,21 @@
 
 #define ENABLE_VALIDATION false
 
-// Number of instances per object
-#if defined(__ANDROID__)
-#define OBJECT_INSTANCE_COUNT 1024
-// Circular range of plant distribution
-#define PLANT_RADIUS 20.0f
-#else
-#define OBJECT_INSTANCE_COUNT 2048
-// Circular range of plant distribution
-#define PLANT_RADIUS 25.0f
-#endif
-
 class VulkanExample : public VulkanExampleBase
 {
 public:
+#if defined(__ANDROID__)
+	// Number of instances that will be rendered per mesh in the gltf scene
+	const uint32_t instances_per_mesh = 1024;
+	// Radius in which plants will be instanced
+	const float plant_radius = 20.0f;
+#else
+	// Number of instances that will be rendered per mesh in the gltf scene
+	const uint32_t instances_per_mesh = 2048;
+	// Radius in which plants will be instanced
+	const float plant_radius = 25.0f;
+#endif
+
 	struct Textures {
 		vks::Texture2DArray plants;
 		vks::Texture2D ground;
@@ -63,9 +56,13 @@ public:
 
 	// Contains the instanced data
 	vks::Buffer instanceBuffer;
-	// Contains the indirect drawing commands
+	// Stores the indirect draw commands containing index offsets and instance count per object
+	std::vector<VkDrawIndexedIndirectCommand> indirectCommands;
+	// Buffer contains the indirect drawing commands
 	vks::Buffer indirectCommandsBuffer;
 	uint32_t indirectDrawCount;
+	// Stores the total number of instanced objects visible in the scene
+	uint32_t instanceCount = 0;
 
 	struct UniformData {
 		glm::mat4 projection;
@@ -92,13 +89,6 @@ public:
 	} descriptorSetLayouts;
 	// The descriptor set for the images is static, and not required to be per-frame
 	VkDescriptorSet imagesDescriptorSet;
-
-	VkSampler samplerRepeat;
-
-	uint32_t objectCount = 0;
-
-	// Store the indirect draw commands containing index offsets and instance count per object
-	std::vector<VkDrawIndexedIndirectCommand> indirectCommands;
 
 	VulkanExample() : VulkanExampleBase(ENABLE_VALIDATION)
 	{
@@ -142,9 +132,11 @@ public:
 	void loadAssets()
 	{
 		const uint32_t glTFLoadingFlags = vkglTF::FileLoadingFlags::PreTransformVertices | vkglTF::FileLoadingFlags::PreMultiplyVertexColors | vkglTF::FileLoadingFlags::FlipY;
+		// This gltf mesh contains the different meshes for the instanced plants
 		models.plants.loadFromFile(getAssetPath() + "models/plants.gltf", vulkanDevice, queue, glTFLoadingFlags);
 		models.ground.loadFromFile(getAssetPath() + "models/plane_circle.gltf", vulkanDevice, queue, glTFLoadingFlags);
 		models.skysphere.loadFromFile(getAssetPath() + "models/sphere.gltf", vulkanDevice, queue, glTFLoadingFlags);
+		// This texture array contains one texture map per mesh in the gltf file, which is mapped to the mesh index later on
 		textures.plants.loadFromFile(getAssetPath() + "textures/texturearray_plants_rgba.ktx", VK_FORMAT_R8G8B8A8_UNORM, vulkanDevice, queue);
 		textures.ground.loadFromFile(getAssetPath() + "textures/ground_dry_rgba.ktx", VK_FORMAT_R8G8B8A8_UNORM, vulkanDevice, queue);
 	}
@@ -192,8 +184,6 @@ public:
 			vks::initializers::writeDescriptorSet(imagesDescriptorSet, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, &textures.ground.descriptor),
 		};
 		vkUpdateDescriptorSets(device, static_cast<uint32_t>(writeDescriptorSets.size()), writeDescriptorSets.data(), 0, nullptr);
-
-
 	}
 
 	void createPipelines()
@@ -249,10 +239,10 @@ public:
 		attributeDescriptions = {
 		    // Per-vertex attributes
 		    // These are advanced for each vertex fetched by the vertex shader
-		    vks::initializers::vertexInputAttributeDescription(0, 0, VK_FORMAT_R32G32B32_SFLOAT, 0),								// Location 0: Position
-		    vks::initializers::vertexInputAttributeDescription(0, 1, VK_FORMAT_R32G32B32_SFLOAT, sizeof(float) * 3),				// Location 1: Normal
-		    vks::initializers::vertexInputAttributeDescription(0, 2, VK_FORMAT_R32G32_SFLOAT, sizeof(float) * 6),					// Location 2: Texture coordinates
-		    vks::initializers::vertexInputAttributeDescription(0, 3, VK_FORMAT_R32G32B32_SFLOAT, sizeof(float) * 8),				// Location 3: Color
+		    vks::initializers::vertexInputAttributeDescription(0, 0, VK_FORMAT_R32G32B32_SFLOAT, 0),							// Location 0: Position
+		    vks::initializers::vertexInputAttributeDescription(0, 1, VK_FORMAT_R32G32B32_SFLOAT, sizeof(float) * 3),			// Location 1: Normal
+		    vks::initializers::vertexInputAttributeDescription(0, 2, VK_FORMAT_R32G32_SFLOAT, sizeof(float) * 6),				// Location 2: Texture coordinates
+		    vks::initializers::vertexInputAttributeDescription(0, 3, VK_FORMAT_R32G32B32_SFLOAT, sizeof(float) * 8),			// Location 3: Color
 		    // Per-Instance attributes
 		    // These are fetched for each instance rendered
 		    vks::initializers::vertexInputAttributeDescription(1, 4, VK_FORMAT_R32G32B32_SFLOAT, offsetof(InstanceData, pos)),	// Location 4: Position
@@ -290,38 +280,31 @@ public:
 		VK_CHECK_RESULT(vkCreateGraphicsPipelines(device, pipelineCache, 1, &pipelineCI, nullptr, &pipelines.skysphere));
 	}
 
-	// Prepare (and stage) a buffer containing the indirect draw commands
+	// Prepare a buffer containing the indirect draw commands
 	void createIndirectBuffer()
 	{
 		indirectCommands.clear();
 
-		// @todo: comment
-		// Create one indirect command for node in the scene with a mesh attached to it
+		// Create one indirect command for each mesh in the gltf source file
 		uint32_t m = 0;
-		for (auto &node : models.plants.nodes)
-		{
-			if (node->mesh)
-			{
+		for (auto &node : models.plants.nodes) {
+			if (node->mesh) {
 				VkDrawIndexedIndirectCommand indirectCmd{};
-				indirectCmd.instanceCount = OBJECT_INSTANCE_COUNT;
-				indirectCmd.firstInstance = m * OBJECT_INSTANCE_COUNT;
-				// @todo: Multiple primitives
-				// A glTF node may consist of multiple primitives, so we may have to do multiple commands per mesh
+				indirectCmd.instanceCount = instances_per_mesh;
+				indirectCmd.firstInstance = m * instances_per_mesh;
+				// To keep things simple, we only use the first primitive of the gltf mesh
+				// In theory a gltf mesh can have multiple primitives, but that's not the case for the gltf scene we use in this sample
 				indirectCmd.firstIndex = node->mesh->primitives[0]->firstIndex;
 				indirectCmd.indexCount = node->mesh->primitives[0]->indexCount;
-
 				indirectCommands.push_back(indirectCmd);
-
 				m++;
 			}
 		}
-
 		indirectDrawCount = static_cast<uint32_t>(indirectCommands.size());
 
-		objectCount = 0;
-		for (auto indirectCmd : indirectCommands)
-		{
-			objectCount += indirectCmd.instanceCount;
+		instanceCount = 0;
+		for (auto& indirectCmd : indirectCommands) {
+			instanceCount += indirectCmd.instanceCount;
 		}
 
 		// Copy the buffer to the GPU
@@ -341,24 +324,27 @@ public:
 		stagingBuffer.destroy();
 	}
 
-	// Prepare (and stage) a buffer containing instanced data for the mesh draws
+	// Prepare a buffer containing instanced data for the mesh draws
 	void createInstanceBuffer()
 	{
 		std::vector<InstanceData> instanceData;
-		instanceData.resize(objectCount);
+		instanceData.resize(instanceCount);
 
 		std::default_random_engine rndEngine(benchmark.active ? 0 : (unsigned)time(nullptr));
 		std::uniform_real_distribution<float> uniformDist(0.0f, 1.0f);
 
-		for (uint32_t i = 0; i < objectCount; i++) {
+		// We fill the buffer with random data for each instance
+		for (uint32_t i = 0; i < instanceCount; i++) {
 			float theta = 2 * float(M_PI) * uniformDist(rndEngine);
 			float phi = acos(1 - 2 * uniformDist(rndEngine));
 			instanceData[i].rot = glm::vec3(0.0f, float(M_PI) * uniformDist(rndEngine), 0.0f);
-			instanceData[i].pos = glm::vec3(sin(phi) * cos(theta), 0.0f, cos(phi)) * PLANT_RADIUS;
+			instanceData[i].pos = glm::vec3(sin(phi) * cos(theta), 0.0f, cos(phi)) * plant_radius;
 			instanceData[i].scale = 1.0f + uniformDist(rndEngine) * 2.0f;
-			instanceData[i].texIndex = i / OBJECT_INSTANCE_COUNT;
+			// Match the texture index for this instance with the gltf texture order
+			instanceData[i].texIndex = i / instances_per_mesh;
 		}
 
+		// Copy the buffer to the GPU
 		vks::Buffer stagingBuffer;
 		VK_CHECK_RESULT(vulkanDevice->createBuffer(
 			VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
@@ -366,15 +352,12 @@ public:
 			&stagingBuffer,
 			instanceData.size() * sizeof(InstanceData),
 			instanceData.data()));
-
 		VK_CHECK_RESULT(vulkanDevice->createBuffer(
 			VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
 			VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
 			&instanceBuffer,
 			stagingBuffer.size));
-
 		vulkanDevice->copyBuffer(&stagingBuffer, &instanceBuffer, queue);
-
 		stagingBuffer.destroy();
 	}
 
@@ -418,7 +401,6 @@ public:
 		vkCmdSetViewport(commandBuffer, 0, 1, &viewport);
 		vkCmdSetScissor(commandBuffer, 0, 1, &renderArea);
 
-		// @todo: comment
 		vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout, 0, 1, &currentFrame.descriptorSet, 0, nullptr);
 		vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout, 1, 1, &imagesDescriptorSet, 0, nullptr);
 
@@ -466,7 +448,7 @@ public:
 			}
 		}
 		if (overlay->header("Statistics")) {
-			overlay->text("Objects: %d", objectCount);
+			overlay->text("Instances: %d", instanceCount);
 		}
 	}
 };
