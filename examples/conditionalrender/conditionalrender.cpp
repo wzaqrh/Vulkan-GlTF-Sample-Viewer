@@ -1,7 +1,7 @@
 /*
  * Vulkan Example - Conditional rendering
  *
- * Copyright (C) 2018-2021 by Sascha Willems - www.saschawillems.de
+ * Copyright (C) 2018-2022 by Sascha Willems - www.saschawillems.de
  *
  * This code is licensed under the MIT license (MIT) (http://opensource.org/licenses/MIT)
  */
@@ -53,8 +53,8 @@ public:
 		settings.overlay = true;
 		camera.setType(Camera::CameraType::lookat);
 		camera.setPerspective(45.0f, (float)width / (float)height, 0.1f, 512.0f);
-		camera.setRotation(glm::vec3(-2.25f, -52.0f, 0.0f));
-		camera.setTranslation(glm::vec3(1.9f, 2.05f, -18.0f));
+		camera.setRotation(glm::vec3(-10.0f, -45.0f, 0.0f));
+		camera.setTranslation(glm::vec3(1.9f, 2.05f, -25.0f));
 		camera.setRotationSpeed(0.25f);
 
 		// Enable the extension required to use conditional rendering
@@ -231,10 +231,7 @@ public:
 		const VkCommandBufferBeginInfo commandBufferBeginInfo = getCommandBufferBeginInfo();
 		const VkRect2D renderArea = getRenderArea();
 		const VkViewport viewport = getViewport();
-		VkClearValue clearValues[2];
-		clearValues[0].color = { { 1.0f, 1.0f, 1.0f, 1.0f } };
-		clearValues[1].depthStencil = { 1.0f, 0 };
-		const VkRenderPassBeginInfo renderPassBeginInfo = getRenderPassBeginInfo(renderPass, clearValues);
+		const VkRenderPassBeginInfo renderPassBeginInfo = getRenderPassBeginInfo(renderPass, defaultClearValues);
 		VK_CHECK_RESULT(vkBeginCommandBuffer(commandBuffer, &commandBufferBeginInfo));
 		vkCmdBeginRenderPass(commandBuffer, &renderPassBeginInfo, VK_SUBPASS_CONTENTS_INLINE);
 		vkCmdSetViewport(commandBuffer, 0, 1, &viewport);
