@@ -1,7 +1,7 @@
 /*
 * Vulkan Example - glTF skinned animation
 *
-* Copyright (C) 2020-2021 by Sascha Willems - www.saschawillems.de
+* Copyright (C) 2020-2022 by Sascha Willems - www.saschawillems.de
 *
 * This code is licensed under the MIT license (MIT) (http://opensource.org/licenses/MIT)
 */
@@ -96,7 +96,16 @@ void VulkanglTFModel::loadImages(tinygltf::Model &input)
 			bufferSize = glTFImage.image.size();
 		}
 		// Load texture from image buffer
-		images[i].texture.fromBuffer(buffer, bufferSize, VK_FORMAT_R8G8B8A8_UNORM, glTFImage.width, glTFImage.height, vulkanDevice, copyQueue);
+		// We need to select the format based on an image's content. Color images use sRGB, other images (e.g. normal maps) don't.
+		VkFormat format = VK_FORMAT_R8G8B8A8_SRGB;
+		for (auto& material : input.materials) {
+			if (material.additionalValues.find("normalTexture") != material.additionalValues.end()) {
+				if (material.additionalValues["normalTexture"].TextureIndex() == i) {
+					format = VK_FORMAT_R8G8B8A8_UNORM;
+				}
+			}
+		}
+		images[i].texture.fromBuffer(buffer, bufferSize, format, glTFImage.width, glTFImage.height, vulkanDevice, copyQueue);
 		if (deleteBuffer)
 		{
 			delete[] buffer;
@@ -678,8 +687,7 @@ void VulkanExample::buildCommandBuffers()
 	VkCommandBufferBeginInfo cmdBufInfo = vks::initializers::commandBufferBeginInfo();
 
 	VkClearValue clearValues[2];
-	clearValues[0].color = {{0.25f, 0.25f, 0.25f, 1.0f}};
-	;
+	clearValues[0].color = {{0.05f, 0.05f, 0.05f, 1.0f}};
 	clearValues[1].depthStencil = {1.0f, 0};
 
 	VkRenderPassBeginInfo renderPassBeginInfo    = vks::initializers::renderPassBeginInfo();
