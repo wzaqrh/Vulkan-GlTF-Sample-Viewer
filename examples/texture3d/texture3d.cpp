@@ -1,7 +1,7 @@
 /*
 * Vulkan Example - 3D texture loading (and generation using perlin noise) example
 *
-* Copyright (C) 2016 by Sascha Willems - www.saschawillems.de
+* Copyright (C) 2016-2022 by Sascha Willems - www.saschawillems.de
 *
 * This code is licensed under the MIT license (MIT) (http://opensource.org/licenses/MIT)
 */
@@ -204,7 +204,7 @@ public:
 		texture.height = height;
 		texture.depth = depth;
 		texture.mipLevels = 1;
-		texture.format = VK_FORMAT_R8_UNORM;
+		texture.format = VK_FORMAT_R8_SRGB;
 
 		// Format support check
 		// 3D texture support in Vulkan is mandatory (in contrast to OpenGL) so no need to check if it's supported

@@ -1,7 +1,7 @@
 /*
 * Vulkan Example - Texture loading (and display) example (including mip maps)
 *
-* Copyright (C) 2016-2017 by Sascha Willems - www.saschawillems.de
+* Copyright (C) 2016-2022 by Sascha Willems - www.saschawillems.de
 *
 * This code is licensed under the MIT license (MIT) (http://opensource.org/licenses/MIT)
 */
@@ -118,8 +118,8 @@ public:
 	{
 		// We use the Khronos texture format (https://www.khronos.org/opengles/sdk/tools/KTX/file_format_spec/)
 		std::string filename = getAssetPath() + "textures/metalplate01_rgba.ktx";
-		// Texture data contains 4 channels (RGBA) with unnormalized 8-bit values, this is the most commonly supported format
-		VkFormat format = VK_FORMAT_R8G8B8A8_UNORM;
+		// Texture data contains 3 color channels (RGB) and 1 alpha channel (A) with 8-bits per channel and uses the sRGB color space
+		VkFormat format = VK_FORMAT_R8G8B8A8_SRGB;
 
 		ktxResult result;
 		ktxTexture* ktxTexture;

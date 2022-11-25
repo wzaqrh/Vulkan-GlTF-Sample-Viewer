@@ -1,7 +1,7 @@
 /*
 * Vulkan Example - Sparse texture residency example
 *
-* Copyright (C) 2016-2021 by Sascha Willems - www.saschawillems.de
+* Copyright (C) 2016-2022 by Sascha Willems - www.saschawillems.de
 *
 * This code is licensed under the MIT license (MIT) (http://opensource.org/licenses/MIT)
 */
@@ -688,7 +688,7 @@ void VulkanExample::prepare()
 	loadAssets();
 	prepareUniformBuffers();
 	// Create a virtual texture with max. possible dimension (does not take up any VRAM yet)
-	prepareSparseTexture(4096, 4096, 1, VK_FORMAT_R8G8B8A8_UNORM);
+	prepareSparseTexture(4096, 4096, 1, VK_FORMAT_R8G8B8A8_SRGB);
 	setupDescriptorSetLayout();
 	preparePipelines();
 	setupDescriptorPool();

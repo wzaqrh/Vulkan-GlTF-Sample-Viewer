@@ -1,7 +1,7 @@
 /*
 * Vulkan Example - Texture arrays and instanced rendering
 *
-* Copyright (C) Sascha Willems - www.saschawillems.de
+* Copyright (C) 2016-2022 by Sascha Willems - www.saschawillems.de
 *
 * This code is licensed under the MIT license (MIT) (http://opensource.org/licenses/MIT)
 */
@@ -276,7 +276,7 @@ public:
 
 	void loadAssets()
 	{
-		loadTextureArray(getAssetPath() + "textures/texturearray_rgba.ktx", VK_FORMAT_R8G8B8A8_UNORM);
+		loadTextureArray(getAssetPath() + "textures/texturearray_rgba.ktx", VK_FORMAT_R8G8B8A8_SRGB);
 	}
 
 	void buildCommandBuffers()

@@ -1,7 +1,7 @@
 /*
 * Vulkan Example - Cube map texture loading and displaying
 *
-* Copyright (C) 2016 by Sascha Willems - www.saschawillems.de
+* Copyright (C) 2016-2022 by Sascha Willems - www.saschawillems.de
 *
 * This code is licensed under the MIT license (MIT) (http://opensource.org/licenses/MIT)
 */
@@ -355,7 +355,7 @@ public:
 		}
 		// Cubemap texture
 		const bool forceLinearTiling = false;
-		loadCubemap(getAssetPath() + "textures/cubemap_yokohama_rgba.ktx", VK_FORMAT_R8G8B8A8_UNORM, forceLinearTiling);
+		loadCubemap(getAssetPath() + "textures/cubemap_yokohama_rgba.ktx", VK_FORMAT_R8G8B8A8_SRGB, forceLinearTiling);
 	}
 
 	void setupDescriptorPool()
