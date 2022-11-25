@@ -6,6 +6,17 @@ struct VSInput
 [[vk::location(1)]] float4 GradientPos : POSITION1;
 };
 
+struct UBO
+{
+	float deltaT;
+	float destX;
+	float destY;
+	int particleCount;
+    float2 screenDim;
+};
+
+cbuffer ubo : register(b2) { UBO ubo; }
+
 struct VSOutput
 {
   float4 Pos : SV_POSITION;
@@ -16,20 +27,13 @@ struct VSOutput
 [[vk::location(3)]] float PointSize : TEXCOORD0;
 };
 
-struct PushConsts
-{
-  float2 screendim;
-};
-
-[[vk::push_constant]] PushConsts pushConstants;
-
 VSOutput main (VSInput input)
 {
   VSOutput output = (VSOutput)0;
-  output.PSize = output.PointSize = 8.0;
+  output.PSize = output.PointSize = 16.0;
   output.Color = float4(0.035, 0.035, 0.035, 0.035);
   output.GradientPos = input.GradientPos.x;
   output.Pos = float4(input.Pos.xy, 1.0, 1.0);
-	output.CenterPos = ((output.Pos.xy / output.Pos.w) + 1.0) * 0.5 * pushConstants.screendim;
+  output.CenterPos = ((output.Pos.xy / output.Pos.w) + 1.0) * 0.5 * ubo.screenDim;
   return output;
 }

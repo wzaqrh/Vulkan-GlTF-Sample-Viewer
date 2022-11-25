@@ -16,6 +16,7 @@ struct UBO
 	float destX;
 	float destY;
 	int particleCount;
+    float2 screenDim;
 };
 
 cbuffer ubo : register(b1) { UBO ubo; }

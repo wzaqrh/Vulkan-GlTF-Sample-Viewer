@@ -3,7 +3,7 @@
 *
 * Updated compute shader by Lukas Bergdoll (https://github.com/Voultapher)
 *
-* Copyright (C) 2016-2021 by Sascha Willems - www.saschawillems.de
+* Copyright (C) 2016-2022 by Sascha Willems - www.saschawillems.de
 *
 * This code is licensed under the MIT license (MIT) (http://opensource.org/licenses/MIT)
 */
@@ -37,6 +37,15 @@ public:
 		std::vector<VkVertexInputAttributeDescription> attributeDescriptions;
 	} vertices;
 
+	struct UniformData {
+		float deltaT;							// Frame delta time
+		float destX;							// x position of the attractor
+		float destY;							// y position of the attractor
+		int32_t particleCount = PARTICLE_COUNT; // Total particle count
+		glm::vec2 screenDim;					// Screen size (required by the HLSL vertes shader)
+	} uniformData;
+	vks::Buffer uniformBuffer;					// Uniform buffer object containing particle system parameters
+
 	// Resources for the graphics part of the example
 	struct {
 		uint32_t queueFamilyIndex;					// Used to check if compute and graphics queue families differ and require additional barriers
@@ -51,7 +60,6 @@ public:
 	struct {
 		uint32_t queueFamilyIndex;					// Used to check if compute and graphics queue families differ and require additional barriers
 		vks::Buffer storageBuffer;					// (Shader) storage buffer object containing the particles
-		vks::Buffer uniformBuffer;					// Uniform buffer object containing particle system parameters
 		VkQueue queue;								// Separate queue for compute commands (queue family may differ from the one used for graphics)
 		VkCommandPool commandPool;					// Use a separate command pool (queue family may differ from the one used for graphics)
 		VkCommandBuffer commandBuffer;				// Command buffer storing the dispatch commands and barriers
@@ -60,12 +68,6 @@ public:
 		VkDescriptorSet descriptorSet;				// Compute shader bindings
 		VkPipelineLayout pipelineLayout;			// Layout of the compute pipeline
 		VkPipeline pipeline;						// Compute pipeline for updating particle positions
-		struct computeUBO {							// Compute shader uniform block object
-			float deltaT;							//		Frame delta time
-			float destX;							//		x position of the attractor
-			float destY;							//		y position of the attractor
-			int32_t particleCount = PARTICLE_COUNT;
-		} ubo;
 	} compute;
 
 	// SSBO particle declaration
@@ -82,6 +84,8 @@ public:
 
 	~VulkanExample()
 	{
+		uniformBuffer.destroy();
+		
 		// Graphics
 		vkDestroyPipeline(device, graphics.pipeline, nullptr);
 		vkDestroyPipelineLayout(device, graphics.pipelineLayout, nullptr);
@@ -90,7 +94,6 @@ public:
 
 		// Compute
 		compute.storageBuffer.destroy();
-		compute.uniformBuffer.destroy();
 		vkDestroyPipelineLayout(device, compute.pipelineLayout, nullptr);
 		vkDestroyDescriptorSetLayout(device, compute.descriptorSetLayout, nullptr);
 		vkDestroyPipeline(device, compute.pipeline, nullptr);
@@ -103,8 +106,8 @@ public:
 
 	void loadAssets()
 	{
-		textures.particle.loadFromFile(getAssetPath() + "textures/particle01_rgba.ktx", VK_FORMAT_R8G8B8A8_UNORM, vulkanDevice, queue);
-		textures.gradient.loadFromFile(getAssetPath() + "textures/particle_gradient_rgba.ktx", VK_FORMAT_R8G8B8A8_UNORM, vulkanDevice, queue);
+		textures.particle.loadFromFile(getAssetPath() + "textures/particle01_rgba.ktx", VK_FORMAT_R8G8B8A8_SRGB, vulkanDevice, queue);
+		textures.gradient.loadFromFile(getAssetPath() + "textures/particle_gradient_rgba.ktx", VK_FORMAT_R8G8B8A8_SRGB, vulkanDevice, queue);
 	}
 
 	void buildCommandBuffers()
@@ -384,7 +387,7 @@ public:
 	{
 		std::vector<VkDescriptorPoolSize> poolSizes =
 		{
-			vks::initializers::descriptorPoolSize(VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1),
+			vks::initializers::descriptorPoolSize(VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 2),
 			vks::initializers::descriptorPoolSize(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1),
 			vks::initializers::descriptorPoolSize(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 2)
 		};
@@ -411,6 +414,11 @@ public:
 			VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
 			VK_SHADER_STAGE_FRAGMENT_BIT,
 			1));
+		// Binding 2 : Uniform buffer 
+		setLayoutBindings.push_back(vks::initializers::descriptorSetLayoutBinding(
+			VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
+			VK_SHADER_STAGE_VERTEX_BIT,
+			2));
 
 		VkDescriptorSetLayoutCreateInfo descriptorLayout =
 			vks::initializers::descriptorSetLayoutCreateInfo(
@@ -450,6 +458,12 @@ public:
 			VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
 			1,
 			&textures.gradient.descriptor));
+		// Binding 2 : Parameter UBO (screenDim is required in the HLSL shader)
+		writeDescriptorSets.push_back(vks::initializers::writeDescriptorSet(
+			graphics.descriptorSet,
+			VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
+			2,
+			&uniformBuffer.descriptor));
 
 		vkUpdateDescriptorSets(device, static_cast<uint32_t>(writeDescriptorSets.size()), writeDescriptorSets.data(), 0, NULL);
 	}
@@ -620,7 +634,7 @@ public:
 				compute.descriptorSet,
 				VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
 				1,
-				&compute.uniformBuffer.descriptor)
+				&uniformBuffer.descriptor)
 		};
 
 		vkUpdateDescriptorSets(device, static_cast<uint32_t>(computeWriteDescriptorSets.size()), computeWriteDescriptorSets.data(), 0, NULL);
@@ -705,36 +719,37 @@ public:
 	// Prepare and initialize uniform buffer containing shader uniforms
 	void prepareUniformBuffers()
 	{
-		// Compute shader uniform buffer block
 		vulkanDevice->createBuffer(
 			VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
 			VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
-			&compute.uniformBuffer,
-			sizeof(compute.ubo));
+			&uniformBuffer,
+			sizeof(UniformData));
 
 		// Map for host access
-		VK_CHECK_RESULT(compute.uniformBuffer.map());
+		VK_CHECK_RESULT(uniformBuffer.map());
 
 		updateUniformBuffers();
 	}
 
 	void updateUniformBuffers()
 	{
-		compute.ubo.deltaT = paused ? 0.0f : frameTimer * 2.5f;
+		uniformData.deltaT = paused ? 0.0f : frameTimer * 2.5f;
 		if (!attachToCursor)
 		{
-			compute.ubo.destX = sin(glm::radians(timer * 360.0f)) * 0.75f;
-			compute.ubo.destY = 0.0f;
+			uniformData.destX = sin(glm::radians(timer * 360.0f)) * 0.75f;
+			uniformData.destY = 0.0f;
 		}
 		else
 		{
 			float normalizedMx = (mousePos.x - static_cast<float>(width / 2)) / static_cast<float>(width / 2);
 			float normalizedMy = (mousePos.y - static_cast<float>(height / 2)) / static_cast<float>(height / 2);
-			compute.ubo.destX = normalizedMx;
-			compute.ubo.destY = normalizedMy;
+			uniformData.destX = normalizedMx;
+			uniformData.destY = normalizedMy;
 		}
 
-		memcpy(compute.uniformBuffer.mapped, &compute.ubo, sizeof(compute.ubo));
+		uniformData.screenDim = glm::vec2((float)width, (float)height);
+
+		memcpy(uniformBuffer.mapped, &uniformData, sizeof(UniformData));
 	}
 
 	void draw()
