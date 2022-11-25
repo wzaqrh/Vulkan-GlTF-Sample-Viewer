@@ -163,36 +163,32 @@ void VulkanSwapChain::initSurface(uint32_t width, uint32_t height)
 	std::vector<VkSurfaceFormatKHR> surfaceFormats(formatCount);
 	VK_CHECK_RESULT(fpGetPhysicalDeviceSurfaceFormatsKHR(physicalDevice, surface, &formatCount, surfaceFormats.data()));
 
-	// If the surface format list only includes one entry with VK_FORMAT_UNDEFINED,
-	// there is no preferred format, so we assume VK_FORMAT_B8G8R8A8_UNORM
-	if ((formatCount == 1) && (surfaceFormats[0].format == VK_FORMAT_UNDEFINED))
-	{
-		colorFormat = VK_FORMAT_B8G8R8A8_UNORM;
-		colorSpace = surfaceFormats[0].colorSpace;
-	}
-	else
-	{
-		// iterate over the list of available surface format and
-		// check for the presence of VK_FORMAT_B8G8R8A8_UNORM
-		bool found_B8G8R8A8_UNORM = false;
-		for (auto&& surfaceFormat : surfaceFormats)
-		{
-			if (surfaceFormat.format == VK_FORMAT_B8G8R8A8_UNORM)
-			{
+	// We try to get an sRGB surface format 
+	const std::vector<VkSurfaceFormatKHR> preferredSurfaceFormats = {
+		{VK_FORMAT_B8G8R8A8_SRGB, VK_COLOR_SPACE_SRGB_NONLINEAR_KHR},
+		{VK_FORMAT_R8G8B8A8_SRGB, VK_COLOR_SPACE_SRGB_NONLINEAR_KHR}
+	};
+
+	bool foundPreferredFormat = false;
+	for (auto& preferredFormat : preferredSurfaceFormats) {
+		for (auto& surfaceFormat : surfaceFormats) {
+			if ((surfaceFormat.format == preferredFormat.format) && (surfaceFormat.colorSpace == preferredFormat.colorSpace)) {
 				colorFormat = surfaceFormat.format;
 				colorSpace = surfaceFormat.colorSpace;
-				found_B8G8R8A8_UNORM = true;
+				foundPreferredFormat = true;
 				break;
 			}
 		}
-
-		// in case VK_FORMAT_B8G8R8A8_UNORM is not available
-		// select the first available color format
-		if (!found_B8G8R8A8_UNORM)
-		{
-			colorFormat = surfaceFormats[0].format;
-			colorSpace = surfaceFormats[0].colorSpace;
+		if (foundPreferredFormat) {
+			break;
 		}
+	}
+
+	// If we didn't get an sRGB surface format, we simply fall back to the first reported format
+	// Note that this may result in wrong colors
+	if (!foundPreferredFormat) {
+		colorFormat = surfaceFormats[0].format;
+		colorSpace = surfaceFormats[0].colorSpace;
 	}
 
 }
