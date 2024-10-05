@@ -490,7 +490,7 @@ public:
 				.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO,
 				.codeSize = shaderSize,
 				.pCode = (uint32_t*)shaderCode
-			};		
+			};
 			VkShaderModule shaderModule;
 			VK_CHECK_RESULT(vkCreateShaderModule(device, &shaderModuleCI, nullptr, &shaderModule));
 
@@ -601,22 +601,25 @@ public:
 		};
 
 		// Input attribute bindings describe shader attribute locations and memory layouts
-		std::array<VkVertexInputAttributeDescription, 2> vertexInputAttributs;
 		// These match the following shader layout (see triangle.vert):
 		//	layout (location = 0) in vec3 inPos;
 		//	layout (location = 1) in vec3 inColor;
+		std::array<VkVertexInputAttributeDescription, 2> vertexInputAttributs = {};
 		// Attribute location 0: Position
-		vertexInputAttributs[0].binding = 0;
-		vertexInputAttributs[0].location = 0;
-		// Position attribute is three 32 bit signed (SFLOAT) floats (R32 G32 B32)
-		vertexInputAttributs[0].format = VK_FORMAT_R32G32B32_SFLOAT;
-		vertexInputAttributs[0].offset = offsetof(Vertex, position);
-		// Attribute location 1: Color
-		vertexInputAttributs[1].binding = 0;
-		vertexInputAttributs[1].location = 1;
-		// Color attribute is three 32 bit signed (SFLOAT) floats (R32 G32 B32)
-		vertexInputAttributs[1].format = VK_FORMAT_R32G32B32_SFLOAT;
-		vertexInputAttributs[1].offset = offsetof(Vertex, color);
+		vertexInputAttributs[0] = {
+			.location = 0,
+			.binding = 0,
+			// Position attribute is three 32 bit signed (SFLOAT) floats (R32 G32 B32)
+			.format = VK_FORMAT_R32G32B32_SFLOAT,
+			.offset = offsetof(Vertex, position)
+		};
+		vertexInputAttributs[1] = {
+			.location = 1,
+			.binding = 0,
+			// Color attribute is three 32 bit signed (SFLOAT) floats (R32 G32 B32)
+			.format = VK_FORMAT_R32G32B32_SFLOAT,
+			.offset = offsetof(Vertex, color)
+		};
 
 		// Vertex input state used for pipeline creation
 		VkPipelineVertexInputStateCreateInfo vertexInputStateCI = {
@@ -878,7 +881,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
 	}
 	return (DefWindowProc(hWnd, uMsg, wParam, lParam));
 }
-int APIENTRY WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR pCmdLine, int nCmdShow)
+int APIENTRY WinMain(_In_ HINSTANCE hInstance, _In_opt_  HINSTANCE hPrevInstance, _In_ LPSTR, _In_ int)
 {
 	for (size_t i = 0; i < __argc; i++) { VulkanExample::args.push_back(__argv[i]); };
 	vulkanExample = new VulkanExample();
