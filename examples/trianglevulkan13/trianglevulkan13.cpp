@@ -330,16 +330,16 @@ public:
 		// Descriptors are allocated from a pool, that tells the implementation how many and what types of descriptors we are going to use (at maximum)
 		VkDescriptorPoolSize descriptorTypeCounts[1]{};
 		// This example only one descriptor type (uniform buffer)
-		descriptorTypeCounts[0].type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-		// We have one buffer (and as such descriptor) per frame
-		descriptorTypeCounts[0].descriptorCount = MAX_CONCURRENT_FRAMES;
+		descriptorTypeCounts[0] = {
+			.type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
+			// We have one buffer (and as such descriptor) per frame
+			.descriptorCount = MAX_CONCURRENT_FRAMES
+		};
 		// For additional types you need to add new entries in the type count list
-		// E.g. for two combined image samplers :
-		// typeCounts[1].type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-		// typeCounts[1].descriptorCount = 2;
+		// E.g. for adding a combined image sampler:
+		// descriptorTypeCounts[1 = { .type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, .descriptorCount = 1 }
 
-		// Create the global descriptor pool
-		// All descriptors used in this example are allocated from this pool
+		// All descriptors used in this example are allocated from a global descriptor pool
 		VkDescriptorPoolCreateInfo descriptorPoolCI = {
 			.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO,
 			// Set the max. number of descriptor sets that can be requested from this pool (requesting beyond this limit will result in an error)
@@ -359,7 +359,6 @@ public:
 			.descriptorCount = 1,
 			.stageFlags = VK_SHADER_STAGE_VERTEX_BIT,
 		};
-
 		VkDescriptorSetLayoutCreateInfo descriptorLayoutCI = {
 			.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
 			.bindingCount = 1,
@@ -383,7 +382,6 @@ public:
 				.buffer = uniformBuffers[i].handle,
 				.range = sizeof(ShaderData)
 			};
-
 			// Update the descriptor set determining the shader binding points
 			// For every binding point used in a shader there needs to be one
 			// descriptor set matching that binding point
