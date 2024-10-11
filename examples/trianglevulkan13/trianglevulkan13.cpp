@@ -158,7 +158,7 @@ public:
 		throw "Could not find a suitable memory type!";
 	}
 
-	// Create the per-frame (in flight) sVulkan synchronization primitives used in this example
+	// Create the per-frame (in flight) Vulkan synchronization primitives used in this example
 	void createSynchronizationPrimitives()
 	{
 		for (uint32_t i = 0; i < MAX_CONCURRENT_FRAMES; i++) {		
@@ -242,7 +242,7 @@ public:
 		VK_CHECK_RESULT(vkCreateBuffer(device, &stagingBufferCI, nullptr, &stagingBuffer.handle));
 		vkGetBufferMemoryRequirements(device, stagingBuffer.handle, &memReqs);
 		memAlloc.allocationSize = memReqs.size;
-		// Request a host visible memory type that can be used to copy our data dto
+		// Request a host visible memory type that can be used to copy our data to
 		// Also request it to be coherent, so that writes are visible to the GPU right after unmapping the buffer
 		memAlloc.memoryTypeIndex = getMemoryTypeIndex(memReqs.memoryTypeBits, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
 		VK_CHECK_RESULT(vkAllocateMemory(device, &memAlloc, nullptr, &stagingBuffer.memory));
@@ -599,6 +599,7 @@ public:
 		};
 
 		// Input attribute bindings describe shader attribute locations and memory layouts
+		std::array<VkVertexInputAttributeDescription, 2> vertexInputAttributs{};
 		// These match the following shader layout (see triangle.vert):
 		//	layout (location = 0) in vec3 inPos;
 		//	layout (location = 1) in vec3 inColor;
@@ -684,12 +685,10 @@ public:
 	{
 		// Prepare and initialize the per-frame uniform buffer blocks containing shader uniforms
 		// Single uniforms like in OpenGL are no longer present in Vulkan. All Shader uniforms are passed via uniform buffer blocks
-		VkBufferCreateInfo bufferInfo = {
-			.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
-			.size = sizeof(ShaderData),
-			// This buffer will be used as a uniform buffer
-			.usage = VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT
-		};
+		VkBufferCreateInfo bufferInfo{ VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO };
+		bufferInfo.size = sizeof(ShaderData);
+		// This buffer will be used as a uniform buffer
+		bufferInfo.usage = VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT;
 
 		// Create the buffers
 		for (uint32_t i = 0; i < MAX_CONCURRENT_FRAMES; i++) {
@@ -802,7 +801,7 @@ public:
 		// Update dynamic scissor state
 		VkRect2D scissor{ 0, 0, width, height };
 		vkCmdSetScissor(commandBuffer, 0, 1, &scissor);
-		// Bind descriptor set for the currrent frame's uniform buffer, so the shader uses the data from that buffer for this draw
+		// Bind descriptor set for the current frame's uniform buffer, so the shader uses the data from that buffer for this draw
 		vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout, 0, 1, &uniformBuffers[currentFrame].descriptorSet, 0, nullptr);
 		// The pipeline (state object) contains all states of the rendering pipeline, binding it will set all the states specified at pipeline creation time
 		vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline);
@@ -812,7 +811,7 @@ public:
 		// Bind triangle index buffer
 		vkCmdBindIndexBuffer(commandBuffer, indexBuffer.handle, 0, VK_INDEX_TYPE_UINT32);
 		// Draw indexed triangle
-		vkCmdDrawIndexed(commandBuffer, indexCount, 1, 0, 0, 1);
+		vkCmdDrawIndexed(commandBuffer, indexCount, 1, 0, 0, 0);
 		// Finish the current dynamic rendering section
 		vkCmdEndRendering(commandBuffer);
 
