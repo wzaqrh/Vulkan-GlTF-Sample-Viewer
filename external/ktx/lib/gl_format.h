@@ -1,4 +1,4 @@
-﻿/*
+/*
 ================================================================================================
 
 Description	:	OpenGL formats/types and properties.
@@ -12,19 +12,8 @@ Copyright	:	Copyright (c) 2016 Oculus VR, LLC. All Rights reserved.
 LICENSE
 =======
 
-Copyright (c) 2016 Oculus VR, LLC.
-
-Licensed under the Apache License, Version 2.0 (the "License");
-you may not use this file except in compliance with the License.
-You may obtain a copy of the License at
-
-     http://www.apache.org/licenses/LICENSE-2.0
-
-Unless required by applicable law or agreed to in writing, software
-distributed under the License is distributed on an "AS IS" BASIS,
-WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-See the License for the specific language governing permissions and
-limitations under the License.
+Copyright 2016 Oculus VR, LLC.
+SPDX-License-Identifier: Apache-2.0
 
 
 DESCRIPTION
@@ -81,12 +70,14 @@ static inline GLenum glGetFormatFromInternalFormat( const GLenum internalFormat 
 static inline GLenum glGetTypeFromInternalFormat( const GLenum internalFormat );
 static inline void glGetFormatSize( const GLenum internalFormat, GlFormatSize * pFormatSize );
 static inline unsigned int glGetTypeSizeFromType( const GLenum type );
- 
+
 MODIFICATIONS for use in libktx
 ===============================
- 
+
 2018.3.23 Added glGetTypeSizeFromType. Mark Callow, Edgewise Consulting.
-2019.3.09 #if 0 around GL type declarations. Mark Callow,     〃
+2019.3.09 #if 0 around GL type declarations.            〃
+2019.5.30 Use common ktxFormatSize to return results.         〃
+2019.5.30 Return blockSizeInBits 0 for default case of glGetFormatSize. 〃
 
 ================================================================================================
 */
@@ -95,14 +86,19 @@ MODIFICATIONS for use in libktx
 #define GL_FORMAT_H
 
 #include <assert.h>
+#include "formatsize.h"
+#include "vkformat_enum.h"
 
-#if defined(_WIN32)
+#if defined(_WIN32) && !defined(__MINGW32__)
+#if !defined(NOMINMAX)
 #define NOMINMAX
+#endif // !defined(NOMINMAX)
 #ifndef __cplusplus
 #undef inline
 #define inline __inline
 #endif // __cplusplus
 #endif
+
 
 /*
 ===========================================================================
@@ -480,7 +476,7 @@ Internal format to glTexImage2D, glTexImage3D, glCompressedTexImage2D, glCompres
 #define GL_RG32I										0x823B
 #endif
 #if !defined( GL_RGB32I )
-#define GL_RGB32I										0x8D83	// same as GL_RGB32I_EXT 
+#define GL_RGB32I										0x8D83	// same as GL_RGB32I_EXT
 #endif
 #if !defined( GL_RGBA32I )
 #define GL_RGBA32I										0x8D82	// same as GL_RGBA32I_EXT
@@ -1598,7 +1594,7 @@ static inline unsigned int glGetTypeSizeFromType(GLenum type)
         case GL_UNSIGNED_BYTE_3_3_2:
         case GL_UNSIGNED_BYTE_2_3_3_REV:
             return 1;
-            
+
         case GL_SHORT:
         case GL_UNSIGNED_SHORT:
         case GL_UNSIGNED_SHORT_5_6_5:
@@ -1609,7 +1605,7 @@ static inline unsigned int glGetTypeSizeFromType(GLenum type)
         case GL_UNSIGNED_SHORT_1_5_5_5_REV:
         case GL_HALF_FLOAT:
             return 2;
-            
+
         case GL_INT:
         case GL_UNSIGNED_INT:
         case GL_UNSIGNED_INT_8_8_8_8:
@@ -1628,27 +1624,9 @@ static inline unsigned int glGetTypeSizeFromType(GLenum type)
     }
 }
 
-typedef enum GlFormatSizeFlagBits {
-	GL_FORMAT_SIZE_PACKED_BIT				= 0x00000001,
-	GL_FORMAT_SIZE_COMPRESSED_BIT			= 0x00000002,
-	GL_FORMAT_SIZE_PALETTIZED_BIT			= 0x00000004,
-	GL_FORMAT_SIZE_DEPTH_BIT				= 0x00000008,
-	GL_FORMAT_SIZE_STENCIL_BIT				= 0x00000010,
-} GlFormatSizeFlagBits;
-
-typedef unsigned int GlFormatSizeFlags;
-
-typedef struct GlFormatSize {
-	GlFormatSizeFlags	flags;
-	unsigned int		paletteSizeInBits;
-	unsigned int		blockSizeInBits;
-	unsigned int		blockWidth;			// in texels
-	unsigned int		blockHeight;		// in texels
-	unsigned int		blockDepth;			// in texels
-} GlFormatSize;
-
-static inline void glGetFormatSize( const GLenum internalFormat, GlFormatSize * pFormatSize )
+static inline void glGetFormatSize( const GLenum internalFormat, ktxFormatSize * pFormatSize )
 {
+	pFormatSize->minBlocksX = pFormatSize->minBlocksY = 1;
 	switch ( internalFormat )
 	{
 		//
@@ -1803,7 +1781,7 @@ static inline void glGetFormatSize( const GLenum internalFormat, GlFormatSize * 
 		// Packed
 		//
 		case GL_R3_G3_B2:										// 3-component 3:3:2, unsigned normalized
-			pFormatSize->flags = GL_FORMAT_SIZE_PACKED_BIT;
+			pFormatSize->flags = KTX_FORMAT_SIZE_PACKED_BIT;
 			pFormatSize->paletteSizeInBits = 0;
 			pFormatSize->blockSizeInBits = 8;
 			pFormatSize->blockWidth = 1;
@@ -1811,7 +1789,7 @@ static inline void glGetFormatSize( const GLenum internalFormat, GlFormatSize * 
 			pFormatSize->blockDepth = 1;
 			break;
 		case GL_RGB4:											// 3-component 4:4:4, unsigned normalized
-			pFormatSize->flags = GL_FORMAT_SIZE_PACKED_BIT;
+			pFormatSize->flags = KTX_FORMAT_SIZE_PACKED_BIT;
 			pFormatSize->paletteSizeInBits = 0;
 			pFormatSize->blockSizeInBits = 12;
 			pFormatSize->blockWidth = 1;
@@ -1819,7 +1797,7 @@ static inline void glGetFormatSize( const GLenum internalFormat, GlFormatSize * 
 			pFormatSize->blockDepth = 1;
 			break;
 		case GL_RGB5:											// 3-component 5:5:5, unsigned normalized
-			pFormatSize->flags = GL_FORMAT_SIZE_PACKED_BIT;
+			pFormatSize->flags = KTX_FORMAT_SIZE_PACKED_BIT;
 			pFormatSize->paletteSizeInBits = 0;
 			pFormatSize->blockSizeInBits = 16;
 			pFormatSize->blockWidth = 1;
@@ -1827,7 +1805,7 @@ static inline void glGetFormatSize( const GLenum internalFormat, GlFormatSize * 
 			pFormatSize->blockDepth = 1;
 			break;
 		case GL_RGB565:											// 3-component 5:6:5, unsigned normalized
-			pFormatSize->flags = GL_FORMAT_SIZE_PACKED_BIT;
+			pFormatSize->flags = KTX_FORMAT_SIZE_PACKED_BIT;
 			pFormatSize->paletteSizeInBits = 0;
 			pFormatSize->blockSizeInBits = 16;
 			pFormatSize->blockWidth = 1;
@@ -1835,7 +1813,7 @@ static inline void glGetFormatSize( const GLenum internalFormat, GlFormatSize * 
 			pFormatSize->blockDepth = 1;
 			break;
 		case GL_RGB10:											// 3-component 10:10:10, unsigned normalized
-			pFormatSize->flags = GL_FORMAT_SIZE_PACKED_BIT;
+			pFormatSize->flags = KTX_FORMAT_SIZE_PACKED_BIT;
 			pFormatSize->paletteSizeInBits = 0;
 			pFormatSize->blockSizeInBits = 32;
 			pFormatSize->blockWidth = 1;
@@ -1843,7 +1821,7 @@ static inline void glGetFormatSize( const GLenum internalFormat, GlFormatSize * 
 			pFormatSize->blockDepth = 1;
 			break;
 		case GL_RGB12:											// 3-component 12:12:12, unsigned normalized
-			pFormatSize->flags = GL_FORMAT_SIZE_PACKED_BIT;
+			pFormatSize->flags = KTX_FORMAT_SIZE_PACKED_BIT;
 			pFormatSize->paletteSizeInBits = 0;
 			pFormatSize->blockSizeInBits = 36;
 			pFormatSize->blockWidth = 1;
@@ -1851,7 +1829,7 @@ static inline void glGetFormatSize( const GLenum internalFormat, GlFormatSize * 
 			pFormatSize->blockDepth = 1;
 			break;
 		case GL_RGBA2:											// 4-component 2:2:2:2, unsigned normalized
-			pFormatSize->flags = GL_FORMAT_SIZE_PACKED_BIT;
+			pFormatSize->flags = KTX_FORMAT_SIZE_PACKED_BIT;
 			pFormatSize->paletteSizeInBits = 0;
 			pFormatSize->blockSizeInBits = 8;
 			pFormatSize->blockWidth = 1;
@@ -1859,7 +1837,7 @@ static inline void glGetFormatSize( const GLenum internalFormat, GlFormatSize * 
 			pFormatSize->blockDepth = 1;
 			break;
 		case GL_RGBA4:											// 4-component 4:4:4:4, unsigned normalized
-			pFormatSize->flags = GL_FORMAT_SIZE_PACKED_BIT;
+			pFormatSize->flags = KTX_FORMAT_SIZE_PACKED_BIT;
 			pFormatSize->paletteSizeInBits = 0;
 			pFormatSize->blockSizeInBits = 16;
 			pFormatSize->blockWidth = 1;
@@ -1867,7 +1845,7 @@ static inline void glGetFormatSize( const GLenum internalFormat, GlFormatSize * 
 			pFormatSize->blockDepth = 1;
 			break;
 		case GL_RGBA12:											// 4-component 12:12:12:12, unsigned normalized
-			pFormatSize->flags = GL_FORMAT_SIZE_PACKED_BIT;
+			pFormatSize->flags = KTX_FORMAT_SIZE_PACKED_BIT;
 			pFormatSize->paletteSizeInBits = 0;
 			pFormatSize->blockSizeInBits = 48;
 			pFormatSize->blockWidth = 1;
@@ -1875,7 +1853,7 @@ static inline void glGetFormatSize( const GLenum internalFormat, GlFormatSize * 
 			pFormatSize->blockDepth = 1;
 			break;
 		case GL_RGB5_A1:										// 4-component 5:5:5:1, unsigned normalized
-			pFormatSize->flags = GL_FORMAT_SIZE_PACKED_BIT;
+			pFormatSize->flags = KTX_FORMAT_SIZE_PACKED_BIT;
 			pFormatSize->paletteSizeInBits = 0;
 			pFormatSize->blockSizeInBits = 32;
 			pFormatSize->blockWidth = 1;
@@ -1883,7 +1861,7 @@ static inline void glGetFormatSize( const GLenum internalFormat, GlFormatSize * 
 			pFormatSize->blockDepth = 1;
 			break;
 		case GL_RGB10_A2:										// 4-component 10:10:10:2, unsigned normalized
-			pFormatSize->flags = GL_FORMAT_SIZE_PACKED_BIT;
+			pFormatSize->flags = KTX_FORMAT_SIZE_PACKED_BIT;
 			pFormatSize->paletteSizeInBits = 0;
 			pFormatSize->blockSizeInBits = 32;
 			pFormatSize->blockWidth = 1;
@@ -1891,7 +1869,7 @@ static inline void glGetFormatSize( const GLenum internalFormat, GlFormatSize * 
 			pFormatSize->blockDepth = 1;
 			break;
 		case GL_RGB10_A2UI:										// 4-component 10:10:10:2, unsigned integer
-			pFormatSize->flags = GL_FORMAT_SIZE_PACKED_BIT;
+			pFormatSize->flags = KTX_FORMAT_SIZE_PACKED_BIT;
 			pFormatSize->paletteSizeInBits = 0;
 			pFormatSize->blockSizeInBits = 32;
 			pFormatSize->blockWidth = 1;
@@ -1900,7 +1878,7 @@ static inline void glGetFormatSize( const GLenum internalFormat, GlFormatSize * 
 			break;
 		case GL_R11F_G11F_B10F:									// 3-component 11:11:10, floating-point
 		case GL_RGB9_E5:										// 3-component/exp 9:9:9/5, floating-point
-			pFormatSize->flags = GL_FORMAT_SIZE_PACKED_BIT;
+			pFormatSize->flags = KTX_FORMAT_SIZE_PACKED_BIT;
 			pFormatSize->paletteSizeInBits = 0;
 			pFormatSize->blockSizeInBits = 32;
 			pFormatSize->blockWidth = 1;
@@ -1915,7 +1893,7 @@ static inline void glGetFormatSize( const GLenum internalFormat, GlFormatSize * 
 		case GL_COMPRESSED_RGBA_S3TC_DXT1_EXT:					// line through 3D space plus 1-bit alpha, 4x4 blocks, unsigned normalized
 		case GL_COMPRESSED_SRGB_S3TC_DXT1_EXT:					// line through 3D space, 4x4 blocks, sRGB
 		case GL_COMPRESSED_SRGB_ALPHA_S3TC_DXT1_EXT:			// line through 3D space plus 1-bit alpha, 4x4 blocks, sRGB
-			pFormatSize->flags = GL_FORMAT_SIZE_COMPRESSED_BIT;
+			pFormatSize->flags = KTX_FORMAT_SIZE_COMPRESSED_BIT;
 			pFormatSize->paletteSizeInBits = 0;
 			pFormatSize->blockSizeInBits = 64;
 			pFormatSize->blockWidth = 4;
@@ -1926,7 +1904,7 @@ static inline void glGetFormatSize( const GLenum internalFormat, GlFormatSize * 
 		case GL_COMPRESSED_RGBA_S3TC_DXT3_EXT:					// line through 3D space plus 4-bit alpha, 4x4 blocks, unsigned normalized
 		case GL_COMPRESSED_SRGB_ALPHA_S3TC_DXT3_EXT:			// line through 3D space plus line through 1D space, 4x4 blocks, sRGB
 		case GL_COMPRESSED_SRGB_ALPHA_S3TC_DXT5_EXT:			// line through 3D space plus 4-bit alpha, 4x4 blocks, sRGB
-			pFormatSize->flags = GL_FORMAT_SIZE_COMPRESSED_BIT;
+			pFormatSize->flags = KTX_FORMAT_SIZE_COMPRESSED_BIT;
 			pFormatSize->paletteSizeInBits = 0;
 			pFormatSize->blockSizeInBits = 128;
 			pFormatSize->blockWidth = 4;
@@ -1936,7 +1914,7 @@ static inline void glGetFormatSize( const GLenum internalFormat, GlFormatSize * 
 
 		case GL_COMPRESSED_LUMINANCE_LATC1_EXT:					// line through 1D space, 4x4 blocks, unsigned normalized
 		case GL_COMPRESSED_SIGNED_LUMINANCE_LATC1_EXT:			// line through 1D space, 4x4 blocks, signed normalized
-			pFormatSize->flags = GL_FORMAT_SIZE_COMPRESSED_BIT;
+			pFormatSize->flags = KTX_FORMAT_SIZE_COMPRESSED_BIT;
 			pFormatSize->paletteSizeInBits = 0;
 			pFormatSize->blockSizeInBits = 64;
 			pFormatSize->blockWidth = 4;
@@ -1945,7 +1923,7 @@ static inline void glGetFormatSize( const GLenum internalFormat, GlFormatSize * 
 			break;
 		case GL_COMPRESSED_LUMINANCE_ALPHA_LATC2_EXT:			// two lines through 1D space, 4x4 blocks, unsigned normalized
 		case GL_COMPRESSED_SIGNED_LUMINANCE_ALPHA_LATC2_EXT:	// two lines through 1D space, 4x4 blocks, signed normalized
-			pFormatSize->flags = GL_FORMAT_SIZE_COMPRESSED_BIT;
+			pFormatSize->flags = KTX_FORMAT_SIZE_COMPRESSED_BIT;
 			pFormatSize->paletteSizeInBits = 0;
 			pFormatSize->blockSizeInBits = 128;
 			pFormatSize->blockWidth = 4;
@@ -1955,7 +1933,7 @@ static inline void glGetFormatSize( const GLenum internalFormat, GlFormatSize * 
 
 		case GL_COMPRESSED_RED_RGTC1:							// line through 1D space, 4x4 blocks, unsigned normalized
 		case GL_COMPRESSED_SIGNED_RED_RGTC1:					// line through 1D space, 4x4 blocks, signed normalized
-			pFormatSize->flags = GL_FORMAT_SIZE_COMPRESSED_BIT;
+			pFormatSize->flags = KTX_FORMAT_SIZE_COMPRESSED_BIT;
 			pFormatSize->paletteSizeInBits = 0;
 			pFormatSize->blockSizeInBits = 64;
 			pFormatSize->blockWidth = 4;
@@ -1964,7 +1942,7 @@ static inline void glGetFormatSize( const GLenum internalFormat, GlFormatSize * 
 			break;
 		case GL_COMPRESSED_RG_RGTC2:							// two lines through 1D space, 4x4 blocks, unsigned normalized
 		case GL_COMPRESSED_SIGNED_RG_RGTC2:						// two lines through 1D space, 4x4 blocks, signed normalized
-			pFormatSize->flags = GL_FORMAT_SIZE_COMPRESSED_BIT;
+			pFormatSize->flags = KTX_FORMAT_SIZE_COMPRESSED_BIT;
 			pFormatSize->paletteSizeInBits = 0;
 			pFormatSize->blockSizeInBits = 128;
 			pFormatSize->blockWidth = 4;
@@ -1976,7 +1954,7 @@ static inline void glGetFormatSize( const GLenum internalFormat, GlFormatSize * 
 		case GL_COMPRESSED_RGB_BPTC_SIGNED_FLOAT:				// 3-component, 4x4 blocks, signed floating-point
 		case GL_COMPRESSED_RGBA_BPTC_UNORM:						// 4-component, 4x4 blocks, unsigned normalized
 		case GL_COMPRESSED_SRGB_ALPHA_BPTC_UNORM:				// 4-component, 4x4 blocks, sRGB
-			pFormatSize->flags = GL_FORMAT_SIZE_COMPRESSED_BIT;
+			pFormatSize->flags = KTX_FORMAT_SIZE_COMPRESSED_BIT;
 			pFormatSize->paletteSizeInBits = 0;
 			pFormatSize->blockSizeInBits = 128;
 			pFormatSize->blockWidth = 4;
@@ -1992,7 +1970,7 @@ static inline void glGetFormatSize( const GLenum internalFormat, GlFormatSize * 
 		case GL_COMPRESSED_SRGB8_ETC2:							// 3-component ETC2, 4x4 blocks, sRGB
 		case GL_COMPRESSED_RGB8_PUNCHTHROUGH_ALPHA1_ETC2:		// 4-component ETC2 with 1-bit alpha, 4x4 blocks, unsigned normalized
 		case GL_COMPRESSED_SRGB8_PUNCHTHROUGH_ALPHA1_ETC2:		// 4-component ETC2 with 1-bit alpha, 4x4 blocks, sRGB
-			pFormatSize->flags = GL_FORMAT_SIZE_COMPRESSED_BIT;
+			pFormatSize->flags = KTX_FORMAT_SIZE_COMPRESSED_BIT;
 			pFormatSize->paletteSizeInBits = 0;
 			pFormatSize->blockSizeInBits = 64;
 			pFormatSize->blockWidth = 4;
@@ -2001,7 +1979,7 @@ static inline void glGetFormatSize( const GLenum internalFormat, GlFormatSize * 
 			break;
 		case GL_COMPRESSED_RGBA8_ETC2_EAC:						// 4-component ETC2, 4x4 blocks, unsigned normalized
 		case GL_COMPRESSED_SRGB8_ALPHA8_ETC2_EAC:				// 4-component ETC2, 4x4 blocks, sRGB
-			pFormatSize->flags = GL_FORMAT_SIZE_COMPRESSED_BIT;
+			pFormatSize->flags = KTX_FORMAT_SIZE_COMPRESSED_BIT;
 			pFormatSize->paletteSizeInBits = 0;
 			pFormatSize->blockSizeInBits = 128;
 			pFormatSize->blockWidth = 4;
@@ -2011,7 +1989,7 @@ static inline void glGetFormatSize( const GLenum internalFormat, GlFormatSize * 
 
 		case GL_COMPRESSED_R11_EAC:								// 1-component ETC, 4x4 blocks, unsigned normalized
 		case GL_COMPRESSED_SIGNED_R11_EAC:						// 1-component ETC, 4x4 blocks, signed normalized
-			pFormatSize->flags = GL_FORMAT_SIZE_COMPRESSED_BIT;
+			pFormatSize->flags = KTX_FORMAT_SIZE_COMPRESSED_BIT;
 			pFormatSize->paletteSizeInBits = 0;
 			pFormatSize->blockSizeInBits = 64;
 			pFormatSize->blockWidth = 4;
@@ -2020,7 +1998,7 @@ static inline void glGetFormatSize( const GLenum internalFormat, GlFormatSize * 
 			break;
 		case GL_COMPRESSED_RG11_EAC:							// 2-component ETC, 4x4 blocks, unsigned normalized
 		case GL_COMPRESSED_SIGNED_RG11_EAC:						// 2-component ETC, 4x4 blocks, signed normalized
-			pFormatSize->flags = GL_FORMAT_SIZE_COMPRESSED_BIT;
+			pFormatSize->flags = KTX_FORMAT_SIZE_COMPRESSED_BIT;
 			pFormatSize->paletteSizeInBits = 0;
 			pFormatSize->blockSizeInBits = 128;
 			pFormatSize->blockWidth = 4;
@@ -2031,31 +2009,35 @@ static inline void glGetFormatSize( const GLenum internalFormat, GlFormatSize * 
 		//
 		// PVRTC
 		//
-		case GL_COMPRESSED_RGB_PVRTC_2BPPV1_IMG:				// 3-component PVRTC, 16x8 blocks, unsigned normalized
-		case GL_COMPRESSED_SRGB_PVRTC_2BPPV1_EXT:				// 3-component PVRTC, 16x8 blocks, sRGB
-		case GL_COMPRESSED_RGBA_PVRTC_2BPPV1_IMG:				// 4-component PVRTC, 16x8 blocks, unsigned normalized
-		case GL_COMPRESSED_SRGB_ALPHA_PVRTC_2BPPV1_EXT:			// 4-component PVRTC, 16x8 blocks, sRGB
-			pFormatSize->flags = GL_FORMAT_SIZE_COMPRESSED_BIT;
-			pFormatSize->paletteSizeInBits = 0;
-			pFormatSize->blockSizeInBits = 64;
-			pFormatSize->blockWidth = 16;
-			pFormatSize->blockHeight = 8;
-			pFormatSize->blockDepth = 1;
-			break;
-		case GL_COMPRESSED_RGB_PVRTC_4BPPV1_IMG:				// 3-component PVRTC, 8x8 blocks, unsigned normalized
-		case GL_COMPRESSED_SRGB_PVRTC_4BPPV1_EXT:				// 3-component PVRTC, 8x8 blocks, sRGB
-		case GL_COMPRESSED_RGBA_PVRTC_4BPPV1_IMG:				// 4-component PVRTC, 8x8 blocks, unsigned normalized
-		case GL_COMPRESSED_SRGB_ALPHA_PVRTC_4BPPV1_EXT:			// 4-component PVRTC, 8x8 blocks, sRGB
-			pFormatSize->flags = GL_FORMAT_SIZE_COMPRESSED_BIT;
+		case GL_COMPRESSED_RGB_PVRTC_2BPPV1_IMG:				// 3-component PVRTC, 8x4 blocks, unsigned normalized
+		case GL_COMPRESSED_SRGB_PVRTC_2BPPV1_EXT:				// 3-component PVRTC, 8x4 blocks, sRGB
+		case GL_COMPRESSED_RGBA_PVRTC_2BPPV1_IMG:				// 4-component PVRTC, 8x4 blocks, unsigned normalized
+		case GL_COMPRESSED_SRGB_ALPHA_PVRTC_2BPPV1_EXT:			// 4-component PVRTC, 8x4 blocks, sRGB
+			pFormatSize->flags = KTX_FORMAT_SIZE_COMPRESSED_BIT;
 			pFormatSize->paletteSizeInBits = 0;
 			pFormatSize->blockSizeInBits = 64;
 			pFormatSize->blockWidth = 8;
-			pFormatSize->blockHeight = 8;
+			pFormatSize->blockHeight = 4;
 			pFormatSize->blockDepth = 1;
+			pFormatSize->minBlocksX = 2;
+			pFormatSize->minBlocksY = 2;
+			break;
+		case GL_COMPRESSED_RGB_PVRTC_4BPPV1_IMG:				// 3-component PVRTC, 4x4 blocks, unsigned normalized
+		case GL_COMPRESSED_SRGB_PVRTC_4BPPV1_EXT:				// 3-component PVRTC, 4x4 blocks, sRGB
+		case GL_COMPRESSED_RGBA_PVRTC_4BPPV1_IMG:				// 4-component PVRTC, 4x4 blocks, unsigned normalized
+		case GL_COMPRESSED_SRGB_ALPHA_PVRTC_4BPPV1_EXT:			// 4-component PVRTC, 4x4 blocks, sRGB
+			pFormatSize->flags = KTX_FORMAT_SIZE_COMPRESSED_BIT;
+			pFormatSize->paletteSizeInBits = 0;
+			pFormatSize->blockSizeInBits = 64;
+			pFormatSize->blockWidth = 4;
+			pFormatSize->blockHeight = 4;
+			pFormatSize->blockDepth = 1;
+			pFormatSize->minBlocksX = 2;
+			pFormatSize->minBlocksY = 2;
 			break;
 		case GL_COMPRESSED_RGBA_PVRTC_2BPPV2_IMG:				// 4-component PVRTC, 8x4 blocks, unsigned normalized
 		case GL_COMPRESSED_SRGB_ALPHA_PVRTC_2BPPV2_IMG:			// 4-component PVRTC, 8x4 blocks, sRGB
-			pFormatSize->flags = GL_FORMAT_SIZE_COMPRESSED_BIT;
+			pFormatSize->flags = KTX_FORMAT_SIZE_COMPRESSED_BIT;
 			pFormatSize->paletteSizeInBits = 0;
 			pFormatSize->blockSizeInBits = 64;
 			pFormatSize->blockWidth = 8;
@@ -2064,7 +2046,7 @@ static inline void glGetFormatSize( const GLenum internalFormat, GlFormatSize * 
 			break;
 		case GL_COMPRESSED_RGBA_PVRTC_4BPPV2_IMG:				// 4-component PVRTC, 4x4 blocks, unsigned normalized
 		case GL_COMPRESSED_SRGB_ALPHA_PVRTC_4BPPV2_IMG:			// 4-component PVRTC, 4x4 blocks, sRGB
-			pFormatSize->flags = GL_FORMAT_SIZE_COMPRESSED_BIT;
+			pFormatSize->flags = KTX_FORMAT_SIZE_COMPRESSED_BIT;
 			pFormatSize->paletteSizeInBits = 0;
 			pFormatSize->blockSizeInBits = 64;
 			pFormatSize->blockWidth = 4;
@@ -2077,7 +2059,7 @@ static inline void glGetFormatSize( const GLenum internalFormat, GlFormatSize * 
 		//
 		case GL_COMPRESSED_RGBA_ASTC_4x4_KHR:					// 4-component ASTC, 4x4 blocks, unsigned normalized
 		case GL_COMPRESSED_SRGB8_ALPHA8_ASTC_4x4_KHR:			// 4-component ASTC, 4x4 blocks, sRGB
-			pFormatSize->flags = GL_FORMAT_SIZE_COMPRESSED_BIT;
+			pFormatSize->flags = KTX_FORMAT_SIZE_COMPRESSED_BIT;
 			pFormatSize->paletteSizeInBits = 0;
 			pFormatSize->blockSizeInBits = 128;
 			pFormatSize->blockWidth = 4;
@@ -2086,7 +2068,7 @@ static inline void glGetFormatSize( const GLenum internalFormat, GlFormatSize * 
 			break;
 		case GL_COMPRESSED_RGBA_ASTC_5x4_KHR:					// 4-component ASTC, 5x4 blocks, unsigned normalized
 		case GL_COMPRESSED_SRGB8_ALPHA8_ASTC_5x4_KHR:			// 4-component ASTC, 5x4 blocks, sRGB
-			pFormatSize->flags = GL_FORMAT_SIZE_COMPRESSED_BIT;
+			pFormatSize->flags = KTX_FORMAT_SIZE_COMPRESSED_BIT;
 			pFormatSize->paletteSizeInBits = 0;
 			pFormatSize->blockSizeInBits = 128;
 			pFormatSize->blockWidth = 5;
@@ -2095,7 +2077,7 @@ static inline void glGetFormatSize( const GLenum internalFormat, GlFormatSize * 
 			break;
 		case GL_COMPRESSED_RGBA_ASTC_5x5_KHR:					// 4-component ASTC, 5x5 blocks, unsigned normalized
 		case GL_COMPRESSED_SRGB8_ALPHA8_ASTC_5x5_KHR:			// 4-component ASTC, 5x5 blocks, sRGB
-			pFormatSize->flags = GL_FORMAT_SIZE_COMPRESSED_BIT;
+			pFormatSize->flags = KTX_FORMAT_SIZE_COMPRESSED_BIT;
 			pFormatSize->paletteSizeInBits = 0;
 			pFormatSize->blockSizeInBits = 128;
 			pFormatSize->blockWidth = 5;
@@ -2104,7 +2086,7 @@ static inline void glGetFormatSize( const GLenum internalFormat, GlFormatSize * 
 			break;
 		case GL_COMPRESSED_RGBA_ASTC_6x5_KHR:					// 4-component ASTC, 6x5 blocks, unsigned normalized
 		case GL_COMPRESSED_SRGB8_ALPHA8_ASTC_6x5_KHR:			// 4-component ASTC, 6x5 blocks, sRGB
-			pFormatSize->flags = GL_FORMAT_SIZE_COMPRESSED_BIT;
+			pFormatSize->flags = KTX_FORMAT_SIZE_COMPRESSED_BIT;
 			pFormatSize->paletteSizeInBits = 0;
 			pFormatSize->blockSizeInBits = 128;
 			pFormatSize->blockWidth = 6;
@@ -2113,7 +2095,7 @@ static inline void glGetFormatSize( const GLenum internalFormat, GlFormatSize * 
 			break;
 		case GL_COMPRESSED_RGBA_ASTC_6x6_KHR:					// 4-component ASTC, 6x6 blocks, unsigned normalized
 		case GL_COMPRESSED_SRGB8_ALPHA8_ASTC_6x6_KHR:			// 4-component ASTC, 6x6 blocks, sRGB
-			pFormatSize->flags = GL_FORMAT_SIZE_COMPRESSED_BIT;
+			pFormatSize->flags = KTX_FORMAT_SIZE_COMPRESSED_BIT;
 			pFormatSize->paletteSizeInBits = 0;
 			pFormatSize->blockSizeInBits = 128;
 			pFormatSize->blockWidth = 6;
@@ -2122,7 +2104,7 @@ static inline void glGetFormatSize( const GLenum internalFormat, GlFormatSize * 
 			break;
 		case GL_COMPRESSED_RGBA_ASTC_8x5_KHR:					// 4-component ASTC, 8x5 blocks, unsigned normalized
 		case GL_COMPRESSED_SRGB8_ALPHA8_ASTC_8x5_KHR:			// 4-component ASTC, 8x5 blocks, sRGB
-			pFormatSize->flags = GL_FORMAT_SIZE_COMPRESSED_BIT;
+			pFormatSize->flags = KTX_FORMAT_SIZE_COMPRESSED_BIT;
 			pFormatSize->paletteSizeInBits = 0;
 			pFormatSize->blockSizeInBits = 128;
 			pFormatSize->blockWidth = 8;
@@ -2131,7 +2113,7 @@ static inline void glGetFormatSize( const GLenum internalFormat, GlFormatSize * 
 			break;
 		case GL_COMPRESSED_RGBA_ASTC_8x6_KHR:					// 4-component ASTC, 8x6 blocks, unsigned normalized
 		case GL_COMPRESSED_SRGB8_ALPHA8_ASTC_8x6_KHR:			// 4-component ASTC, 8x6 blocks, sRGB
-			pFormatSize->flags = GL_FORMAT_SIZE_COMPRESSED_BIT;
+			pFormatSize->flags = KTX_FORMAT_SIZE_COMPRESSED_BIT;
 			pFormatSize->paletteSizeInBits = 0;
 			pFormatSize->blockSizeInBits = 128;
 			pFormatSize->blockWidth = 8;
@@ -2140,7 +2122,7 @@ static inline void glGetFormatSize( const GLenum internalFormat, GlFormatSize * 
 			break;
 		case GL_COMPRESSED_RGBA_ASTC_8x8_KHR:					// 4-component ASTC, 8x8 blocks, unsigned normalized
 		case GL_COMPRESSED_SRGB8_ALPHA8_ASTC_8x8_KHR:			// 4-component ASTC, 8x8 blocks, sRGB
-			pFormatSize->flags = GL_FORMAT_SIZE_COMPRESSED_BIT;
+			pFormatSize->flags = KTX_FORMAT_SIZE_COMPRESSED_BIT;
 			pFormatSize->paletteSizeInBits = 0;
 			pFormatSize->blockSizeInBits = 128;
 			pFormatSize->blockWidth = 8;
@@ -2149,7 +2131,7 @@ static inline void glGetFormatSize( const GLenum internalFormat, GlFormatSize * 
 			break;
 		case GL_COMPRESSED_RGBA_ASTC_10x5_KHR:					// 4-component ASTC, 10x5 blocks, unsigned normalized
 		case GL_COMPRESSED_SRGB8_ALPHA8_ASTC_10x5_KHR:			// 4-component ASTC, 10x5 blocks, sRGB
-			pFormatSize->flags = GL_FORMAT_SIZE_COMPRESSED_BIT;
+			pFormatSize->flags = KTX_FORMAT_SIZE_COMPRESSED_BIT;
 			pFormatSize->paletteSizeInBits = 0;
 			pFormatSize->blockSizeInBits = 128;
 			pFormatSize->blockWidth = 10;
@@ -2158,7 +2140,7 @@ static inline void glGetFormatSize( const GLenum internalFormat, GlFormatSize * 
 			break;
 		case GL_COMPRESSED_RGBA_ASTC_10x6_KHR:					// 4-component ASTC, 10x6 blocks, unsigned normalized
 		case GL_COMPRESSED_SRGB8_ALPHA8_ASTC_10x6_KHR:			// 4-component ASTC, 10x6 blocks, sRGB
-			pFormatSize->flags = GL_FORMAT_SIZE_COMPRESSED_BIT;
+			pFormatSize->flags = KTX_FORMAT_SIZE_COMPRESSED_BIT;
 			pFormatSize->paletteSizeInBits = 0;
 			pFormatSize->blockSizeInBits = 128;
 			pFormatSize->blockWidth = 10;
@@ -2167,7 +2149,7 @@ static inline void glGetFormatSize( const GLenum internalFormat, GlFormatSize * 
 			break;
 		case GL_COMPRESSED_RGBA_ASTC_10x8_KHR:					// 4-component ASTC, 10x8 blocks, unsigned normalized
 		case GL_COMPRESSED_SRGB8_ALPHA8_ASTC_10x8_KHR:			// 4-component ASTC, 10x8 blocks, sRGB
-			pFormatSize->flags = GL_FORMAT_SIZE_COMPRESSED_BIT;
+			pFormatSize->flags = KTX_FORMAT_SIZE_COMPRESSED_BIT;
 			pFormatSize->paletteSizeInBits = 0;
 			pFormatSize->blockSizeInBits = 128;
 			pFormatSize->blockWidth = 10;
@@ -2176,7 +2158,7 @@ static inline void glGetFormatSize( const GLenum internalFormat, GlFormatSize * 
 			break;
 		case GL_COMPRESSED_RGBA_ASTC_10x10_KHR:					// 4-component ASTC, 10x10 blocks, unsigned normalized
 		case GL_COMPRESSED_SRGB8_ALPHA8_ASTC_10x10_KHR:			// 4-component ASTC, 10x10 blocks, sRGB
-			pFormatSize->flags = GL_FORMAT_SIZE_COMPRESSED_BIT;
+			pFormatSize->flags = KTX_FORMAT_SIZE_COMPRESSED_BIT;
 			pFormatSize->paletteSizeInBits = 0;
 			pFormatSize->blockSizeInBits = 128;
 			pFormatSize->blockWidth = 10;
@@ -2185,7 +2167,7 @@ static inline void glGetFormatSize( const GLenum internalFormat, GlFormatSize * 
 			break;
 		case GL_COMPRESSED_RGBA_ASTC_12x10_KHR:					// 4-component ASTC, 12x10 blocks, unsigned normalized
 		case GL_COMPRESSED_SRGB8_ALPHA8_ASTC_12x10_KHR:			// 4-component ASTC, 12x10 blocks, sRGB
-			pFormatSize->flags = GL_FORMAT_SIZE_COMPRESSED_BIT;
+			pFormatSize->flags = KTX_FORMAT_SIZE_COMPRESSED_BIT;
 			pFormatSize->paletteSizeInBits = 0;
 			pFormatSize->blockSizeInBits = 128;
 			pFormatSize->blockWidth = 12;
@@ -2194,7 +2176,7 @@ static inline void glGetFormatSize( const GLenum internalFormat, GlFormatSize * 
 			break;
 		case GL_COMPRESSED_RGBA_ASTC_12x12_KHR:					// 4-component ASTC, 12x12 blocks, unsigned normalized
 		case GL_COMPRESSED_SRGB8_ALPHA8_ASTC_12x12_KHR:			// 4-component ASTC, 12x12 blocks, sRGB
-			pFormatSize->flags = GL_FORMAT_SIZE_COMPRESSED_BIT;
+			pFormatSize->flags = KTX_FORMAT_SIZE_COMPRESSED_BIT;
 			pFormatSize->paletteSizeInBits = 0;
 			pFormatSize->blockSizeInBits = 128;
 			pFormatSize->blockWidth = 12;
@@ -2204,7 +2186,7 @@ static inline void glGetFormatSize( const GLenum internalFormat, GlFormatSize * 
 
 		case GL_COMPRESSED_RGBA_ASTC_3x3x3_OES:					// 4-component ASTC, 3x3x3 blocks, unsigned normalized
 		case GL_COMPRESSED_SRGB8_ALPHA8_ASTC_3x3x3_OES:			// 4-component ASTC, 3x3x3 blocks, sRGB
-			pFormatSize->flags = GL_FORMAT_SIZE_COMPRESSED_BIT;
+			pFormatSize->flags = KTX_FORMAT_SIZE_COMPRESSED_BIT;
 			pFormatSize->paletteSizeInBits = 0;
 			pFormatSize->blockSizeInBits = 128;
 			pFormatSize->blockWidth = 3;
@@ -2213,7 +2195,7 @@ static inline void glGetFormatSize( const GLenum internalFormat, GlFormatSize * 
 			break;
 		case GL_COMPRESSED_RGBA_ASTC_4x3x3_OES:					// 4-component ASTC, 4x3x3 blocks, unsigned normalized
 		case GL_COMPRESSED_SRGB8_ALPHA8_ASTC_4x3x3_OES:			// 4-component ASTC, 4x3x3 blocks, sRGB
-			pFormatSize->flags = GL_FORMAT_SIZE_COMPRESSED_BIT;
+			pFormatSize->flags = KTX_FORMAT_SIZE_COMPRESSED_BIT;
 			pFormatSize->paletteSizeInBits = 0;
 			pFormatSize->blockSizeInBits = 128;
 			pFormatSize->blockWidth = 4;
@@ -2222,7 +2204,7 @@ static inline void glGetFormatSize( const GLenum internalFormat, GlFormatSize * 
 			break;
 		case GL_COMPRESSED_RGBA_ASTC_4x4x3_OES:					// 4-component ASTC, 4x4x3 blocks, unsigned normalized
 		case GL_COMPRESSED_SRGB8_ALPHA8_ASTC_4x4x3_OES:			// 4-component ASTC, 4x4x3 blocks, sRGB
-			pFormatSize->flags = GL_FORMAT_SIZE_COMPRESSED_BIT;
+			pFormatSize->flags = KTX_FORMAT_SIZE_COMPRESSED_BIT;
 			pFormatSize->paletteSizeInBits = 0;
 			pFormatSize->blockSizeInBits = 128;
 			pFormatSize->blockWidth = 4;
@@ -2231,7 +2213,7 @@ static inline void glGetFormatSize( const GLenum internalFormat, GlFormatSize * 
 			break;
 		case GL_COMPRESSED_RGBA_ASTC_4x4x4_OES:					// 4-component ASTC, 4x4x4 blocks, unsigned normalized
 		case GL_COMPRESSED_SRGB8_ALPHA8_ASTC_4x4x4_OES:			// 4-component ASTC, 4x4x4 blocks, sRGB
-			pFormatSize->flags = GL_FORMAT_SIZE_COMPRESSED_BIT;
+			pFormatSize->flags = KTX_FORMAT_SIZE_COMPRESSED_BIT;
 			pFormatSize->paletteSizeInBits = 0;
 			pFormatSize->blockSizeInBits = 128;
 			pFormatSize->blockWidth = 4;
@@ -2240,7 +2222,7 @@ static inline void glGetFormatSize( const GLenum internalFormat, GlFormatSize * 
 			break;
 		case GL_COMPRESSED_RGBA_ASTC_5x4x4_OES:					// 4-component ASTC, 5x4x4 blocks, unsigned normalized
 		case GL_COMPRESSED_SRGB8_ALPHA8_ASTC_5x4x4_OES:			// 4-component ASTC, 5x4x4 blocks, sRGB
-			pFormatSize->flags = GL_FORMAT_SIZE_COMPRESSED_BIT;
+			pFormatSize->flags = KTX_FORMAT_SIZE_COMPRESSED_BIT;
 			pFormatSize->paletteSizeInBits = 0;
 			pFormatSize->blockSizeInBits = 128;
 			pFormatSize->blockWidth = 5;
@@ -2249,7 +2231,7 @@ static inline void glGetFormatSize( const GLenum internalFormat, GlFormatSize * 
 			break;
 		case GL_COMPRESSED_RGBA_ASTC_5x5x4_OES:					// 4-component ASTC, 5x5x4 blocks, unsigned normalized
 		case GL_COMPRESSED_SRGB8_ALPHA8_ASTC_5x5x4_OES:			// 4-component ASTC, 5x5x4 blocks, sRGB
-			pFormatSize->flags = GL_FORMAT_SIZE_COMPRESSED_BIT;
+			pFormatSize->flags = KTX_FORMAT_SIZE_COMPRESSED_BIT;
 			pFormatSize->paletteSizeInBits = 0;
 			pFormatSize->blockSizeInBits = 128;
 			pFormatSize->blockWidth = 5;
@@ -2258,7 +2240,7 @@ static inline void glGetFormatSize( const GLenum internalFormat, GlFormatSize * 
 			break;
 		case GL_COMPRESSED_RGBA_ASTC_5x5x5_OES:					// 4-component ASTC, 5x5x5 blocks, unsigned normalized
 		case GL_COMPRESSED_SRGB8_ALPHA8_ASTC_5x5x5_OES:			// 4-component ASTC, 5x5x5 blocks, sRGB
-			pFormatSize->flags = GL_FORMAT_SIZE_COMPRESSED_BIT;
+			pFormatSize->flags = KTX_FORMAT_SIZE_COMPRESSED_BIT;
 			pFormatSize->paletteSizeInBits = 0;
 			pFormatSize->blockSizeInBits = 128;
 			pFormatSize->blockWidth = 5;
@@ -2267,7 +2249,7 @@ static inline void glGetFormatSize( const GLenum internalFormat, GlFormatSize * 
 			break;
 		case GL_COMPRESSED_RGBA_ASTC_6x5x5_OES:					// 4-component ASTC, 6x5x5 blocks, unsigned normalized
 		case GL_COMPRESSED_SRGB8_ALPHA8_ASTC_6x5x5_OES:			// 4-component ASTC, 6x5x5 blocks, sRGB
-			pFormatSize->flags = GL_FORMAT_SIZE_COMPRESSED_BIT;
+			pFormatSize->flags = KTX_FORMAT_SIZE_COMPRESSED_BIT;
 			pFormatSize->paletteSizeInBits = 0;
 			pFormatSize->blockSizeInBits = 128;
 			pFormatSize->blockWidth = 6;
@@ -2276,7 +2258,7 @@ static inline void glGetFormatSize( const GLenum internalFormat, GlFormatSize * 
 			break;
 		case GL_COMPRESSED_RGBA_ASTC_6x6x5_OES:					// 4-component ASTC, 6x6x5 blocks, unsigned normalized
 		case GL_COMPRESSED_SRGB8_ALPHA8_ASTC_6x6x5_OES:			// 4-component ASTC, 6x6x5 blocks, sRGB
-			pFormatSize->flags = GL_FORMAT_SIZE_COMPRESSED_BIT;
+			pFormatSize->flags = KTX_FORMAT_SIZE_COMPRESSED_BIT;
 			pFormatSize->paletteSizeInBits = 0;
 			pFormatSize->blockSizeInBits = 128;
 			pFormatSize->blockWidth = 6;
@@ -2285,7 +2267,7 @@ static inline void glGetFormatSize( const GLenum internalFormat, GlFormatSize * 
 			break;
 		case GL_COMPRESSED_RGBA_ASTC_6x6x6_OES:					// 4-component ASTC, 6x6x6 blocks, unsigned normalized
 		case GL_COMPRESSED_SRGB8_ALPHA8_ASTC_6x6x6_OES:			// 4-component ASTC, 6x6x6 blocks, sRGB
-			pFormatSize->flags = GL_FORMAT_SIZE_COMPRESSED_BIT;
+			pFormatSize->flags = KTX_FORMAT_SIZE_COMPRESSED_BIT;
 			pFormatSize->paletteSizeInBits = 0;
 			pFormatSize->blockSizeInBits = 128;
 			pFormatSize->blockWidth = 6;
@@ -2297,7 +2279,7 @@ static inline void glGetFormatSize( const GLenum internalFormat, GlFormatSize * 
 		// ATC
 		//
 		case GL_ATC_RGB_AMD:									// 3-component, 4x4 blocks, unsigned normalized
-			pFormatSize->flags = GL_FORMAT_SIZE_COMPRESSED_BIT;
+			pFormatSize->flags = KTX_FORMAT_SIZE_COMPRESSED_BIT;
 			pFormatSize->paletteSizeInBits = 0;
 			pFormatSize->blockSizeInBits = 64;
 			pFormatSize->blockWidth = 4;
@@ -2306,7 +2288,7 @@ static inline void glGetFormatSize( const GLenum internalFormat, GlFormatSize * 
 			break;
 		case GL_ATC_RGBA_EXPLICIT_ALPHA_AMD:					// 4-component, 4x4 blocks, unsigned normalized
 		case GL_ATC_RGBA_INTERPOLATED_ALPHA_AMD:				// 4-component, 4x4 blocks, unsigned normalized
-			pFormatSize->flags = GL_FORMAT_SIZE_COMPRESSED_BIT;
+			pFormatSize->flags = KTX_FORMAT_SIZE_COMPRESSED_BIT;
 			pFormatSize->paletteSizeInBits = 0;
 			pFormatSize->blockSizeInBits = 128;
 			pFormatSize->blockWidth = 4;
@@ -2318,7 +2300,7 @@ static inline void glGetFormatSize( const GLenum internalFormat, GlFormatSize * 
 		// Palletized
 		//
 		case GL_PALETTE4_RGB8_OES:								// 3-component 8:8:8,   4-bit palette, unsigned normalized
-			pFormatSize->flags = GL_FORMAT_SIZE_PALETTIZED_BIT;
+			pFormatSize->flags = KTX_FORMAT_SIZE_PALETTIZED_BIT;
 			pFormatSize->paletteSizeInBits = 16 * 24;
 			pFormatSize->blockSizeInBits = 4;
 			pFormatSize->blockWidth = 1;
@@ -2326,7 +2308,7 @@ static inline void glGetFormatSize( const GLenum internalFormat, GlFormatSize * 
 			pFormatSize->blockDepth = 1;
 			break;
 		case GL_PALETTE4_RGBA8_OES:								// 4-component 8:8:8:8, 4-bit palette, unsigned normalized
-			pFormatSize->flags = GL_FORMAT_SIZE_PALETTIZED_BIT;
+			pFormatSize->flags = KTX_FORMAT_SIZE_PALETTIZED_BIT;
 			pFormatSize->paletteSizeInBits = 16 * 32;
 			pFormatSize->blockSizeInBits = 4;
 			pFormatSize->blockWidth = 1;
@@ -2336,7 +2318,7 @@ static inline void glGetFormatSize( const GLenum internalFormat, GlFormatSize * 
 		case GL_PALETTE4_R5_G6_B5_OES:							// 3-component 5:6:5,   4-bit palette, unsigned normalized
 		case GL_PALETTE4_RGBA4_OES:								// 4-component 4:4:4:4, 4-bit palette, unsigned normalized
 		case GL_PALETTE4_RGB5_A1_OES:							// 4-component 5:5:5:1, 4-bit palette, unsigned normalized
-			pFormatSize->flags = GL_FORMAT_SIZE_PALETTIZED_BIT;
+			pFormatSize->flags = KTX_FORMAT_SIZE_PALETTIZED_BIT;
 			pFormatSize->paletteSizeInBits = 16 * 16;
 			pFormatSize->blockSizeInBits = 4;
 			pFormatSize->blockWidth = 1;
@@ -2344,7 +2326,7 @@ static inline void glGetFormatSize( const GLenum internalFormat, GlFormatSize * 
 			pFormatSize->blockDepth = 1;
 			break;
 		case GL_PALETTE8_RGB8_OES:								// 3-component 8:8:8,   8-bit palette, unsigned normalized
-			pFormatSize->flags = GL_FORMAT_SIZE_PALETTIZED_BIT;
+			pFormatSize->flags = KTX_FORMAT_SIZE_PALETTIZED_BIT;
 			pFormatSize->paletteSizeInBits = 256 * 24;
 			pFormatSize->blockSizeInBits = 8;
 			pFormatSize->blockWidth = 1;
@@ -2352,7 +2334,7 @@ static inline void glGetFormatSize( const GLenum internalFormat, GlFormatSize * 
 			pFormatSize->blockDepth = 1;
 			break;
 		case GL_PALETTE8_RGBA8_OES:								// 4-component 8:8:8:8, 8-bit palette, unsigned normalized
-			pFormatSize->flags = GL_FORMAT_SIZE_PALETTIZED_BIT;
+			pFormatSize->flags = KTX_FORMAT_SIZE_PALETTIZED_BIT;
 			pFormatSize->paletteSizeInBits = 256 * 32;
 			pFormatSize->blockSizeInBits = 8;
 			pFormatSize->blockWidth = 1;
@@ -2362,7 +2344,7 @@ static inline void glGetFormatSize( const GLenum internalFormat, GlFormatSize * 
 		case GL_PALETTE8_R5_G6_B5_OES:							// 3-component 5:6:5,   8-bit palette, unsigned normalized
 		case GL_PALETTE8_RGBA4_OES:								// 4-component 4:4:4:4, 8-bit palette, unsigned normalized
 		case GL_PALETTE8_RGB5_A1_OES:							// 4-component 5:5:5:1, 8-bit palette, unsigned normalized
-			pFormatSize->flags = GL_FORMAT_SIZE_PALETTIZED_BIT;
+			pFormatSize->flags = KTX_FORMAT_SIZE_PALETTIZED_BIT;
 			pFormatSize->paletteSizeInBits = 256 * 16;
 			pFormatSize->blockSizeInBits = 8;
 			pFormatSize->blockWidth = 1;
@@ -2374,7 +2356,7 @@ static inline void glGetFormatSize( const GLenum internalFormat, GlFormatSize * 
 		// Depth/stencil
 		//
 		case GL_DEPTH_COMPONENT16:
-			pFormatSize->flags = GL_FORMAT_SIZE_DEPTH_BIT;
+			pFormatSize->flags = KTX_FORMAT_SIZE_DEPTH_BIT;
 			pFormatSize->paletteSizeInBits = 0;
 			pFormatSize->blockSizeInBits = 16;
 			pFormatSize->blockWidth = 1;
@@ -2385,7 +2367,7 @@ static inline void glGetFormatSize( const GLenum internalFormat, GlFormatSize * 
 		case GL_DEPTH_COMPONENT32:
 		case GL_DEPTH_COMPONENT32F:
 		case GL_DEPTH_COMPONENT32F_NV:
-			pFormatSize->flags = GL_FORMAT_SIZE_DEPTH_BIT;
+			pFormatSize->flags = KTX_FORMAT_SIZE_DEPTH_BIT;
 			pFormatSize->paletteSizeInBits = 0;
 			pFormatSize->blockSizeInBits = 32;
 			pFormatSize->blockWidth = 1;
@@ -2393,7 +2375,7 @@ static inline void glGetFormatSize( const GLenum internalFormat, GlFormatSize * 
 			pFormatSize->blockDepth = 1;
 			break;
 		case GL_STENCIL_INDEX1:
-			pFormatSize->flags = GL_FORMAT_SIZE_STENCIL_BIT;
+			pFormatSize->flags = KTX_FORMAT_SIZE_STENCIL_BIT;
 			pFormatSize->paletteSizeInBits = 0;
 			pFormatSize->blockSizeInBits = 1;
 			pFormatSize->blockWidth = 1;
@@ -2401,7 +2383,7 @@ static inline void glGetFormatSize( const GLenum internalFormat, GlFormatSize * 
 			pFormatSize->blockDepth = 1;
 			break;
 		case GL_STENCIL_INDEX4:
-			pFormatSize->flags = GL_FORMAT_SIZE_STENCIL_BIT;
+			pFormatSize->flags = KTX_FORMAT_SIZE_STENCIL_BIT;
 			pFormatSize->paletteSizeInBits = 0;
 			pFormatSize->blockSizeInBits = 4;
 			pFormatSize->blockWidth = 1;
@@ -2409,7 +2391,7 @@ static inline void glGetFormatSize( const GLenum internalFormat, GlFormatSize * 
 			pFormatSize->blockDepth = 1;
 			break;
 		case GL_STENCIL_INDEX8:
-			pFormatSize->flags = GL_FORMAT_SIZE_STENCIL_BIT;
+			pFormatSize->flags = KTX_FORMAT_SIZE_STENCIL_BIT;
 			pFormatSize->paletteSizeInBits = 0;
 			pFormatSize->blockSizeInBits = 8;
 			pFormatSize->blockWidth = 1;
@@ -2417,7 +2399,7 @@ static inline void glGetFormatSize( const GLenum internalFormat, GlFormatSize * 
 			pFormatSize->blockDepth = 1;
 			break;
 		case GL_STENCIL_INDEX16:
-			pFormatSize->flags = GL_FORMAT_SIZE_STENCIL_BIT;
+			pFormatSize->flags = KTX_FORMAT_SIZE_STENCIL_BIT;
 			pFormatSize->paletteSizeInBits = 0;
 			pFormatSize->blockSizeInBits = 16;
 			pFormatSize->blockWidth = 1;
@@ -2425,7 +2407,7 @@ static inline void glGetFormatSize( const GLenum internalFormat, GlFormatSize * 
 			pFormatSize->blockDepth = 1;
 			break;
 		case GL_DEPTH24_STENCIL8:
-			pFormatSize->flags = GL_FORMAT_SIZE_DEPTH_BIT | GL_FORMAT_SIZE_STENCIL_BIT;
+			pFormatSize->flags = KTX_FORMAT_SIZE_DEPTH_BIT | KTX_FORMAT_SIZE_STENCIL_BIT;
 			pFormatSize->paletteSizeInBits = 0;
 			pFormatSize->blockSizeInBits = 32;
 			pFormatSize->blockWidth = 1;
@@ -2434,7 +2416,7 @@ static inline void glGetFormatSize( const GLenum internalFormat, GlFormatSize * 
 			break;
 		case GL_DEPTH32F_STENCIL8:
 		case GL_DEPTH32F_STENCIL8_NV:
-			pFormatSize->flags = GL_FORMAT_SIZE_DEPTH_BIT | GL_FORMAT_SIZE_STENCIL_BIT;
+			pFormatSize->flags = KTX_FORMAT_SIZE_DEPTH_BIT | KTX_FORMAT_SIZE_STENCIL_BIT;
 			pFormatSize->paletteSizeInBits = 0;
 			pFormatSize->blockSizeInBits = 64;
 			pFormatSize->blockWidth = 1;
@@ -2445,7 +2427,7 @@ static inline void glGetFormatSize( const GLenum internalFormat, GlFormatSize * 
 		default:
 			pFormatSize->flags = 0;
 			pFormatSize->paletteSizeInBits = 0;
-			pFormatSize->blockSizeInBits = 8;
+			pFormatSize->blockSizeInBits = 0 * 8;
 			pFormatSize->blockWidth = 1;
 			pFormatSize->blockHeight = 1;
 			pFormatSize->blockDepth = 1;
