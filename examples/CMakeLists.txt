@@ -6,7 +6,8 @@ function(buildExample EXAMPLE_NAME)
 	SET(EXAMPLE_FOLDER ${CMAKE_CURRENT_SOURCE_DIR}/${EXAMPLE_NAME})
 	message(STATUS "Generating project file for example in ${EXAMPLE_FOLDER}")
 	# Main
-	file(GLOB SOURCE *.cpp ${BASE_HEADERS} ${EXAMPLE_FOLDER}/*.cpp)
+	file(GLOB SRCINC *.h ${EXAMPLE_FOLDER}/*.h)
+	file(GLOB SOURCE *.cpp ${BASE_HEADERS} ${EXAMPLE_FOLDER}/*.cpp ${SRCINC})
 	SET(MAIN_CPP ${EXAMPLE_FOLDER}/${EXAMPLE_NAME}.cpp)
 	if(EXISTS ${EXAMPLE_FOLDER}/main.cpp)
 		SET(MAIN_CPP ${EXAMPLE_FOLDER}/main.cpp)
@@ -30,6 +31,8 @@ function(buildExample EXAMPLE_NAME)
 	file(GLOB SHADERS_HLSL "${SHADER_DIR_HLSL}/*.vert" "${SHADER_DIR_HLSL}/*.frag" "${SHADER_DIR_HLSL}/*.comp" "${SHADER_DIR_HLSL}/*.geom" "${SHADER_DIR_HLSL}/*.tesc" "${SHADER_DIR_HLSL}/*.tese" "${SHADER_DIR_HLSL}/*.mesh" "${SHADER_DIR_HLSL}/*.task" "${SHADER_DIR_HLSL}/*.rgen" "${SHADER_DIR_HLSL}/*.rchit" "${SHADER_DIR_HLSL}/*.rmiss" "${SHADER_DIR_HLSL}/*.rcall" "${SHADER_DIR_HLSL}/*.rahit" "${SHADER_DIR_HLSL}/*.rint")
 	source_group("Shaders\\GLSL" FILES ${SHADERS_GLSL})
 	source_group("Shaders\\HLSL" FILES ${SHADERS_HLSL})
+	# Add Includes
+	source_group("Includes" FILES ${SRCINC})
 	# Add optional readme / tutorial
 	file(GLOB README_FILES "${EXAMPLE_FOLDER}/*.md")
 	if(WIN32)
@@ -84,99 +87,7 @@ function(buildExamples)
 endfunction(buildExamples)
 
 set(EXAMPLES
-	bloom
-	bufferdeviceaddress
-	computecloth
-	computecullandlod
-	computeheadless
-	computenbody
-	computeparticles
-	computeraytracing
-	computeshader
-	conditionalrender
-	conservativeraster
-	debugprintf
-	debugutils
-	deferred
-	deferredmultisampling
-	deferredshadows
-	descriptorbuffer
-	descriptorindexing
-	descriptorsets
-	displacement
-	distancefieldfonts
-	dynamicrendering
-	dynamicstate
-	dynamicuniformbuffer	
-	gears
-	geometryshader
-	gltfloading
-	gltfscenerendering
-	gltfskinning
-	graphicspipelinelibrary
-	hdr
-	hostimagecopy
-	imgui
-	indirectdraw
-	inlineuniformblocks
-	inputattachments
-	instancing
-	meshshader
-	multisampling
-	multithreading
-	multiview
-	negativeviewportheight	
-	occlusionquery
-	offscreen
-	oit
-	parallaxmapping
-	particlesystem
-	pbrbasic
-	pbribl
-	pbrtexture
-	pipelines
-	pipelinestatistics
-	pushconstants
-	pushdescriptors
-	radialblur
-	rayquery
-	raytracingbasic
-	raytracingcallable
-	raytracinggltf
-	raytracingintersection
-	raytracingreflections
-	raytracingpositionfetch
-	raytracingsbtdata
-	raytracingshadows
-	raytracingtextures
-	renderheadless
-	screenshot
-	shaderobjects
-	shadowmapping
-	shadowmappingomni
-	shadowmappingcascade
-	specializationconstants
-	sphericalenvmapping
-	ssao
-	stencilbuffer
-	subpasses
-	terraintessellation
-	tessellation
-	textoverlay
-	texture
-	texture3d
-	texturearray
-	texturecubemap
-	texturecubemaparray
-	texturemipmapgen
-	texturesparseresidency
-	timelinesemaphore
-	triangle
-	trianglevulkan13
-	variablerateshading
-	vertexattributes
-	viewportarray
-	vulkanscene
+	GLTFSampleViewer
 )
 
 buildExamples()

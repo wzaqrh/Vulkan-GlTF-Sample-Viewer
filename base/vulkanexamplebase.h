@@ -1,7 +1,7 @@
 /*
 * Vulkan Example base class
 *
-* Copyright (C) 2016-2024 by Sascha Willems - www.saschawillems.de
+* Copyright (C) by Sascha Willems - www.saschawillems.de
 *
 * This code is licensed under the MIT license (MIT) (http://opensource.org/licenses/MIT)
 */
@@ -80,7 +80,7 @@ private:
 	uint32_t destWidth;
 	uint32_t destHeight;
 	bool resizing = false;
-	void handleMouseMove(int32_t x, int32_t y);
+	void handleMouseMove(int32_t x, int32_t y, int32_t mouseFlag);
 	void nextFrame();
 	void updateOverlay();
 	void createPipelineCache();
@@ -108,6 +108,7 @@ protected:
 	VkPhysicalDeviceProperties deviceProperties{};
 	// Stores the features available on the selected physical device (for e.g. checking if a feature is available)
 	VkPhysicalDeviceFeatures deviceFeatures{};
+	VkPhysicalDeviceDescriptorIndexingProperties descriptorIndexingProperties;
 	// Stores all available memory (type) properties for the physical device
 	VkPhysicalDeviceMemoryProperties deviceMemoryProperties{};
 	/** @brief Set of physical device features to be enabled for this example (must be set in the derived constructor) */
@@ -158,8 +159,8 @@ public:
 	bool prepared = false;
 	bool resized = false;
 	bool viewUpdated = false;
-	uint32_t width = 1280;
-	uint32_t height = 720;
+	uint32_t width = 1520;
+	uint32_t height = 963;
 
 	vks::UIOverlay ui;
 	CommandLineParser commandLineParser;
@@ -215,7 +216,7 @@ public:
 
 	std::string title = "Vulkan Example";
 	std::string name = "vulkanExample";
-	uint32_t apiVersion = VK_API_VERSION_1_0;
+	uint32_t apiVersion = VK_API_VERSION_1_3;
 
 	/** @brief Default depth stencil attachment used by the default render pass */
 	struct {
@@ -369,7 +370,9 @@ public:
 	/** @brief (Virtual) Called after a key was pressed, can be used to do custom key handling */
 	virtual void keyPressed(uint32_t);
 	/** @brief (Virtual) Called after the mouse cursor moved and before internal events (like camera rotation) is handled */
-	virtual void mouseMoved(double x, double y, bool &handled);
+	virtual void mouseMoved(double x, double y, int32_t mouseFlag, bool &handled);
+	// 
+	virtual void mouseWheeled(short wheelDelta, bool& handled);
 	/** @brief (Virtual) Called when the window has been resized, can be used by the sample application to recreate resources */
 	virtual void windowResized();
 	/** @brief (Virtual) Called when resources have been recreated that require a rebuild of the command buffers (e.g. frame buffer), to be implemented by the sample application */

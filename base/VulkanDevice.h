@@ -40,6 +40,9 @@ struct VulkanDevice
 	/** @brief Default command pool for the graphics queue family index */
 	VkCommandPool commandPool = VK_NULL_HANDLE;
 	/** @brief Contains queue family indices */
+	bool enableDebugMarkers = false;
+	bool enableBindingPartiallyBound = false;
+
 	struct
 	{
 		uint32_t graphics;

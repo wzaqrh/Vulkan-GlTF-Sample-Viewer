@@ -75,7 +75,7 @@ namespace vks
 			}
 			fflush(stdout);
 #endif
-
+			OutputDebugStringA((debugMessage.str() + "\n").c_str());
 
 			// The return value of this callback controls whether the Vulkan call that caused the validation message will be aborted or not
 			// We return VK_FALSE as we DON'T want Vulkan calls that cause a validation message to abort
@@ -97,7 +97,10 @@ namespace vks
 			vkDestroyDebugUtilsMessengerEXT = reinterpret_cast<PFN_vkDestroyDebugUtilsMessengerEXT>(vkGetInstanceProcAddr(instance, "vkDestroyDebugUtilsMessengerEXT"));
 
 			VkDebugUtilsMessengerCreateInfoEXT debugUtilsMessengerCI{};
-			setupDebugingMessengerCreateInfo(debugUtilsMessengerCI);
+			debugUtilsMessengerCI.sType = VK_STRUCTURE_TYPE_DEBUG_UTILS_MESSENGER_CREATE_INFO_EXT;
+			debugUtilsMessengerCI.messageSeverity = VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT | VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT;
+			debugUtilsMessengerCI.messageType = VK_DEBUG_UTILS_MESSAGE_TYPE_GENERAL_BIT_EXT | VK_DEBUG_UTILS_MESSAGE_TYPE_VALIDATION_BIT_EXT;
+			debugUtilsMessengerCI.pfnUserCallback = debugUtilsMessageCallback;
 			VkResult result = vkCreateDebugUtilsMessengerEXT(instance, &debugUtilsMessengerCI, nullptr, &debugUtilsMessenger);
 			assert(result == VK_SUCCESS);
 		}
@@ -113,12 +116,17 @@ namespace vks
 
 	namespace debugutils
 	{
+		PFN_vkSetDebugUtilsObjectNameEXT vkSetDebugUtilsObjectNameEXT{ nullptr };
+		PFN_vkSetDebugUtilsObjectTagEXT vkSetDebugUtilsObjectTagEXT{ nullptr };
 		PFN_vkCmdBeginDebugUtilsLabelEXT vkCmdBeginDebugUtilsLabelEXT{ nullptr };
 		PFN_vkCmdEndDebugUtilsLabelEXT vkCmdEndDebugUtilsLabelEXT{ nullptr };
 		PFN_vkCmdInsertDebugUtilsLabelEXT vkCmdInsertDebugUtilsLabelEXT{ nullptr };
 
 		void setup(VkInstance instance)
 		{
+			vkSetDebugUtilsObjectNameEXT = reinterpret_cast<PFN_vkSetDebugUtilsObjectNameEXT>(vkGetInstanceProcAddr(instance, "vkSetDebugUtilsObjectNameEXT"));
+			vkSetDebugUtilsObjectTagEXT = reinterpret_cast<PFN_vkSetDebugUtilsObjectTagEXT>(vkGetInstanceProcAddr(instance, "vkSetDebugUtilsObjectTagEXT"));
+
 			vkCmdBeginDebugUtilsLabelEXT = reinterpret_cast<PFN_vkCmdBeginDebugUtilsLabelEXT>(vkGetInstanceProcAddr(instance, "vkCmdBeginDebugUtilsLabelEXT"));
 			vkCmdEndDebugUtilsLabelEXT = reinterpret_cast<PFN_vkCmdEndDebugUtilsLabelEXT>(vkGetInstanceProcAddr(instance, "vkCmdEndDebugUtilsLabelEXT"));
 			vkCmdInsertDebugUtilsLabelEXT = reinterpret_cast<PFN_vkCmdInsertDebugUtilsLabelEXT>(vkGetInstanceProcAddr(instance, "vkCmdInsertDebugUtilsLabelEXT"));
@@ -144,6 +152,19 @@ namespace vks
 			vkCmdEndDebugUtilsLabelEXT(cmdbuffer);
 		}
 
+		void setDebugName(VkDevice device, uint64_t objectHandle, VkObjectType objectType, std::string name)
+		{
+			if (vkSetDebugUtilsObjectNameEXT) {
+				VkDebugUtilsObjectNameInfoEXT nameInfo = {};
+				nameInfo.sType = VK_STRUCTURE_TYPE_DEBUG_UTILS_OBJECT_NAME_INFO_EXT;
+				nameInfo.pNext = nullptr;
+				nameInfo.objectType = objectType;		// Vulkan 对象类型，如 VK_OBJECT_TYPE_BUFFER
+				nameInfo.objectHandle = objectHandle;	// Vulkan 对象句柄，必须转为 uint64_t
+				nameInfo.pObjectName = name.c_str();	// 调试名称
+
+				vkSetDebugUtilsObjectNameEXT(device, &nameInfo);
+			}
+		}
 	};
 
 }

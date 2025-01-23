@@ -12,15 +12,42 @@
 // iOS & macOS: getAssetPath() and getShaderBasePath() implemented externally for access to Obj-C++ path utilities
 const std::string getAssetPath()
 {
-if (vks::tools::resourcePath != "") {
-	return vks::tools::resourcePath + "/assets/";
-}
+	if (vks::tools::resourcePath != "") {
+		return vks::tools::resourcePath + "/assets/";
+	}
 #if defined(VK_USE_PLATFORM_ANDROID_KHR)
 	return "";
 #elif defined(VK_EXAMPLE_ASSETS_DIR)
 	return VK_EXAMPLE_ASSETS_DIR;
 #else
 	return "./../assets/";
+#endif
+}
+
+const std::string getModelAssetPath()
+{
+	if (vks::tools::resourcePath != "") {
+		return vks::tools::resourcePath + "/model_assets/";
+	}
+#if defined(VK_USE_PLATFORM_ANDROID_KHR)
+	return "";
+#elif defined(VK_EXAMPLE_MODEL_ASSETS_DIR)
+	return VK_EXAMPLE_MODEL_ASSETS_DIR;
+#else
+	return "./../model_assets/";
+#endif
+}
+const std::string getEnviromentAssetPath()
+{
+	if (vks::tools::resourcePath != "") {
+		return vks::tools::resourcePath + "/environment_assets/";
+	}
+#if defined(VK_USE_PLATFORM_ANDROID_KHR)
+	return "";
+#elif defined(VK_EXAMPLE_ENVIRONMENT_ASSETS_DIR)
+	return VK_EXAMPLE_ENVIRONMENT_ASSETS_DIR;
+#else
+	return "./../environment_assets/";
 #endif
 }
 
@@ -101,7 +128,7 @@ namespace vks
 			// Since all depth formats may be optional, we need to find a suitable depth format to use
 			// Start with the highest precision packed format
 			std::vector<VkFormat> formatList = {
-				VK_FORMAT_D32_SFLOAT_S8_UINT,
+				//VK_FORMAT_D32_SFLOAT_S8_UINT,
 				VK_FORMAT_D32_SFLOAT,
 				VK_FORMAT_D24_UNORM_S8_UINT,
 				VK_FORMAT_D16_UNORM_S8_UINT,
@@ -154,6 +181,48 @@ namespace vks
 				VK_FORMAT_D32_SFLOAT_S8_UINT,
 			};
 			return std::find(stencilFormats.begin(), stencilFormats.end(), format) != std::end(stencilFormats);
+		}
+
+		VkFormat formatConvertToSRGB(VkFormat format) 
+		{
+			switch (format) 
+			{
+				// 8-bit UNORM formats
+			case VK_FORMAT_R8G8B8A8_UNORM: return VK_FORMAT_R8G8B8A8_SRGB;
+			case VK_FORMAT_B8G8R8A8_UNORM: return VK_FORMAT_B8G8R8A8_SRGB;
+			case VK_FORMAT_R8G8B8_UNORM: return VK_FORMAT_R8G8B8_SRGB;
+			case VK_FORMAT_B8G8R8_UNORM: return VK_FORMAT_B8G8R8_SRGB;
+			case VK_FORMAT_A8B8G8R8_UNORM_PACK32: return VK_FORMAT_A8B8G8R8_SRGB_PACK32;
+
+				// Compressed formats
+			case VK_FORMAT_BC1_RGB_UNORM_BLOCK: return VK_FORMAT_BC1_RGB_SRGB_BLOCK;
+			case VK_FORMAT_BC1_RGBA_UNORM_BLOCK: return VK_FORMAT_BC1_RGBA_SRGB_BLOCK;
+			case VK_FORMAT_BC2_UNORM_BLOCK: return VK_FORMAT_BC2_SRGB_BLOCK;
+			case VK_FORMAT_BC3_UNORM_BLOCK: return VK_FORMAT_BC3_SRGB_BLOCK;
+			case VK_FORMAT_BC7_UNORM_BLOCK: return VK_FORMAT_BC7_SRGB_BLOCK;
+
+			case VK_FORMAT_ETC2_R8G8B8_UNORM_BLOCK: return VK_FORMAT_ETC2_R8G8B8_SRGB_BLOCK;
+			case VK_FORMAT_ETC2_R8G8B8A1_UNORM_BLOCK: return VK_FORMAT_ETC2_R8G8B8A1_SRGB_BLOCK;
+			case VK_FORMAT_ETC2_R8G8B8A8_UNORM_BLOCK: return VK_FORMAT_ETC2_R8G8B8A8_SRGB_BLOCK;
+
+			case VK_FORMAT_ASTC_4x4_UNORM_BLOCK: return VK_FORMAT_ASTC_4x4_SRGB_BLOCK;
+			case VK_FORMAT_ASTC_5x4_UNORM_BLOCK: return VK_FORMAT_ASTC_5x4_SRGB_BLOCK;
+			case VK_FORMAT_ASTC_5x5_UNORM_BLOCK: return VK_FORMAT_ASTC_5x5_SRGB_BLOCK;
+			case VK_FORMAT_ASTC_6x5_UNORM_BLOCK: return VK_FORMAT_ASTC_6x5_SRGB_BLOCK;
+			case VK_FORMAT_ASTC_6x6_UNORM_BLOCK: return VK_FORMAT_ASTC_6x6_SRGB_BLOCK;
+			case VK_FORMAT_ASTC_8x5_UNORM_BLOCK: return VK_FORMAT_ASTC_8x5_SRGB_BLOCK;
+			case VK_FORMAT_ASTC_8x6_UNORM_BLOCK: return VK_FORMAT_ASTC_8x6_SRGB_BLOCK;
+			case VK_FORMAT_ASTC_8x8_UNORM_BLOCK: return VK_FORMAT_ASTC_8x8_SRGB_BLOCK;
+			case VK_FORMAT_ASTC_10x5_UNORM_BLOCK: return VK_FORMAT_ASTC_10x5_SRGB_BLOCK;
+			case VK_FORMAT_ASTC_10x6_UNORM_BLOCK: return VK_FORMAT_ASTC_10x6_SRGB_BLOCK;
+			case VK_FORMAT_ASTC_10x8_UNORM_BLOCK: return VK_FORMAT_ASTC_10x8_SRGB_BLOCK;
+			case VK_FORMAT_ASTC_10x10_UNORM_BLOCK: return VK_FORMAT_ASTC_10x10_SRGB_BLOCK;
+			case VK_FORMAT_ASTC_12x10_UNORM_BLOCK: return VK_FORMAT_ASTC_12x10_SRGB_BLOCK;
+			case VK_FORMAT_ASTC_12x12_UNORM_BLOCK: return VK_FORMAT_ASTC_12x12_SRGB_BLOCK;
+
+				// Default case: return the original format if no sRGB version exists
+			default: return format;
+			}
 		}
 
 		// Returns if a given format support LINEAR filtering
@@ -451,5 +520,11 @@ namespace vks
 			return (value + alignment - 1) & ~(alignment - 1);
 		}
 
+		std::string getFileNameExtension(const std::string& filename) 
+		{
+			size_t dotPos = filename.find_last_of('.');
+			if (dotPos == std::string::npos || dotPos == 0) return "";
+			else return filename.substr(dotPos + 1);
+		}
 	}
 }

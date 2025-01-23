@@ -1,7 +1,7 @@
 /*
 * Vulkan Example base class
 *
-* Copyright (C) 2016-2024 by Sascha Willems - www.saschawillems.de
+* Copyright (C) by Sascha Willems - www.saschawillems.de
 *
 * This code is licensed under the MIT license (MIT) (http://opensource.org/licenses/MIT)
 */
@@ -51,7 +51,7 @@ VkResult VulkanExampleBase::createInstance()
 #elif defined(VK_USE_PLATFORM_SCREEN_QNX)
 	instanceExtensions.push_back(VK_QNX_SCREEN_SURFACE_EXTENSION_NAME);
 #endif
-
+	
 	// Get extensions supported by the instance and store for later use
 	uint32_t extCount = 0;
 	vkEnumerateInstanceExtensionProperties(nullptr, &extCount, nullptr);
@@ -76,9 +76,9 @@ VkResult VulkanExampleBase::createInstance()
 #endif
 
 	// Enabled requested instance extensions
-	if (enabledInstanceExtensions.size() > 0)
+	if (enabledInstanceExtensions.size() > 0) 
 	{
-		for (const char * enabledExtension : enabledInstanceExtensions)
+		for (const char * enabledExtension : enabledInstanceExtensions) 
 		{
 			// Output message if requested extension is not available
 			if (std::find(supportedInstanceExtensions.begin(), supportedInstanceExtensions.end(), enabledExtension) == supportedInstanceExtensions.end())
@@ -99,12 +99,12 @@ VkResult VulkanExampleBase::createInstance()
 	instanceCreateInfo.sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO;
 	instanceCreateInfo.pApplicationInfo = &appInfo;
 
-	VkDebugUtilsMessengerCreateInfoEXT debugUtilsMessengerCI{};
+	/*VkDebugUtilsMessengerCreateInfoEXT debugUtilsMessengerCI{};
 	if (settings.validation) {
 		vks::debug::setupDebugingMessengerCreateInfo(debugUtilsMessengerCI);
 		debugUtilsMessengerCI.pNext = instanceCreateInfo.pNext;
 		instanceCreateInfo.pNext = &debugUtilsMessengerCI;
-	}
+	}*/
 
 #if (defined(VK_USE_PLATFORM_IOS_MVK) || defined(VK_USE_PLATFORM_MACOS_MVK) || defined(VK_USE_PLATFORM_METAL_EXT)) && defined(VK_KHR_portability_enumeration)
 	// SRS - When running on iOS/macOS with MoltenVK and VK_KHR_portability_enumeration is defined and supported by the instance, enable the extension and the flag
@@ -118,6 +118,7 @@ VkResult VulkanExampleBase::createInstance()
 	// Enable the debug utils extension if available (e.g. when debugging tools are present)
 	if (settings.validation || std::find(supportedInstanceExtensions.begin(), supportedInstanceExtensions.end(), VK_EXT_DEBUG_UTILS_EXTENSION_NAME) != supportedInstanceExtensions.end()) {
 		instanceExtensions.push_back(VK_EXT_DEBUG_UTILS_EXTENSION_NAME);
+		instanceExtensions.push_back(VK_KHR_GET_PHYSICAL_DEVICE_PROPERTIES_2_EXTENSION_NAME);
 	}
 
 	if (instanceExtensions.size() > 0) {
@@ -814,6 +815,7 @@ VulkanExampleBase::VulkanExampleBase()
 	if (commandLineParser.isSet("validation")) {
 		settings.validation = true;
 	}
+	settings.validation = true;
 	if (commandLineParser.isSet("vsync")) {
 		settings.vsync = true;
 	}
@@ -1063,7 +1065,20 @@ bool VulkanExampleBase::initVulkan()
 	vkGetPhysicalDeviceFeatures(physicalDevice, &deviceFeatures);
 	vkGetPhysicalDeviceMemoryProperties(physicalDevice, &deviceMemoryProperties);
 
-	// Derived examples can override this to set actual features (based on above readings) to enable for logical device creation
+#if 1
+	VkPhysicalDeviceProperties2 deviceProperties2 = {};
+	descriptorIndexingProperties = {};
+	{
+		deviceProperties2.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2;
+		deviceProperties2.pNext = &descriptorIndexingProperties;
+
+		descriptorIndexingProperties.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DESCRIPTOR_INDEXING_PROPERTIES;
+		descriptorIndexingProperties.pNext = nullptr;
+		vkGetPhysicalDeviceProperties2(physicalDevice, &deviceProperties2);
+	}
+#endif
+
+	// Derived examples can override this to set actual features (based on above readings) to enable for logical device creationgetEnabledFeatures();
 	getEnabledFeatures();
 
 	// Vulkan device creation
@@ -1262,6 +1277,8 @@ HWND VulkanExampleBase::setupWindow(HINSTANCE hinstance, WNDPROC wndproc)
 		// Center on screen
 		uint32_t x = (GetSystemMetrics(SM_CXSCREEN) - windowRect.right) / 2;
 		uint32_t y = (GetSystemMetrics(SM_CYSCREEN) - windowRect.bottom) / 2;
+		x = -8;
+		y = 55;
 		SetWindowPos(window, 0, x, y, 0, 0, SWP_NOZORDER | SWP_NOSIZE);
 	}
 
@@ -1371,13 +1388,18 @@ void VulkanExampleBase::handleMessages(HWND hWnd, UINT uMsg, WPARAM wParam, LPAR
 	case WM_MOUSEWHEEL:
 	{
 		short wheelDelta = GET_WHEEL_DELTA_WPARAM(wParam);
-		camera.translate(glm::vec3(0.0f, 0.0f, (float)wheelDelta * 0.005f));
+	#if 0
+		camera.translate(glm::vec3(0.0f, 0.0f, (float)wheelDelta * 0.0005f));
+	#else
+		bool handled = false;
+		mouseWheeled(wheelDelta, handled);
+	#endif
 		viewUpdated = true;
 		break;
 	}
 	case WM_MOUSEMOVE:
 	{
-		handleMouseMove(LOWORD(lParam), HIWORD(lParam));
+		handleMouseMove(LOWORD(lParam), HIWORD(lParam), wParam);
 		break;
 	}
 	case WM_SIZE:
@@ -1622,7 +1644,7 @@ dispatch_group_t concurrentGroup;
 - (void)applicationDidFinishLaunching:(NSNotification *)aNotification
 {
 	[NSApp activateIgnoringOtherApps:YES];		// SRS - Make sure app window launches in front of Xcode window
-
+	
 	concurrentGroup = dispatch_group_create();
 	dispatch_queue_t concurrentQueue = dispatch_get_global_queue(QOS_CLASS_USER_INTERACTIVE, 0);
 	dispatch_group_async(concurrentGroup, concurrentQueue, ^{
@@ -1631,7 +1653,7 @@ dispatch_group_t concurrentGroup;
 			vulkanExample->displayLinkOutputCb();
 		}
 	});
-
+	
 	// SRS - When benchmarking, set up termination notification on main thread when concurrent queue completes
 	if (vulkanExample->benchmark.active) {
 		dispatch_queue_t notifyQueue = dispatch_get_main_queue();
@@ -3010,7 +3032,11 @@ void VulkanExampleBase::setupWindow()
 
 void VulkanExampleBase::keyPressed(uint32_t) {}
 
-void VulkanExampleBase::mouseMoved(double x, double y, bool & handled) {}
+void VulkanExampleBase::mouseMoved(double x, double y, int32_t mouseFlag, bool & handled) {}
+void VulkanExampleBase::mouseWheeled(short wheelDelta, bool& handled)
+{
+	camera.translate(glm::vec3(0.0f, 0.0f, (float)wheelDelta * 0.0005f));
+}
 
 void VulkanExampleBase::buildCommandBuffers() {}
 
@@ -3230,7 +3256,7 @@ void VulkanExampleBase::windowResize()
 	prepared = true;
 }
 
-void VulkanExampleBase::handleMouseMove(int32_t x, int32_t y)
+void VulkanExampleBase::handleMouseMove(int32_t x, int32_t y, int32_t mouseFlag)
 {
 	int32_t dx = (int32_t)mouseState.position.x - x;
 	int32_t dy = (int32_t)mouseState.position.y - y;
@@ -3241,7 +3267,7 @@ void VulkanExampleBase::handleMouseMove(int32_t x, int32_t y)
 		ImGuiIO& io = ImGui::GetIO();
 		handled = io.WantCaptureMouse && ui.visible;
 	}
-	mouseMoved((float)x, (float)y, handled);
+	mouseMoved((float)x, (float)y, mouseFlag, handled);
 
 	if (handled) {
 		mouseState.position = glm::vec2((float)x, (float)y);

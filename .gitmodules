@@ -4,4 +4,9 @@
 [submodule "assets"]
 	path = assets
 	url = https://github.com/SaschaWillems/Vulkan-Assets
-	branch = main
+[submodule "model_assets"]
+	path = model_assets
+	url = https://github.com/KhronosGroup/glTF-Sample-Assets
+[submodule "environment_assets"]
+	path = environment_assets
+	url = https://github.com/KhronosGroup/glTF-Sample-Environments

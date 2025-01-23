@@ -269,6 +269,42 @@ namespace vks
 			deviceCreateInfo.pNext = &physicalDeviceFeatures2;
 		}
 
+		// Enable the debug marker extension if it is present (likely meaning a debugging tool is present)
+		if (extensionSupported(VK_EXT_DEBUG_MARKER_EXTENSION_NAME))
+		{
+			deviceExtensions.push_back(VK_EXT_DEBUG_MARKER_EXTENSION_NAME);
+			enableDebugMarkers = true;
+		}
+
+		if (extensionSupported(VK_EXT_DESCRIPTOR_INDEXING_EXTENSION_NAME))
+		{
+			deviceExtensions.push_back(VK_EXT_DESCRIPTOR_INDEXING_EXTENSION_NAME);
+			enableBindingPartiallyBound = true;
+		}
+
+		VkPhysicalDeviceDescriptorIndexingFeatures descriptorIndexingFeatures = {};
+		if (enableBindingPartiallyBound) {
+			descriptorIndexingFeatures.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DESCRIPTOR_INDEXING_FEATURES;
+			descriptorIndexingFeatures.pNext = nullptr;
+			descriptorIndexingFeatures.descriptorBindingPartiallyBound = VK_TRUE; // ÆôÓÃÌØÐÔ
+			if (!pNextChain) {
+				physicalDeviceFeatures2.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2;
+				physicalDeviceFeatures2.features = enabledFeatures;
+				physicalDeviceFeatures2.pNext = &descriptorIndexingFeatures;
+
+				deviceCreateInfo.pEnabledFeatures = nullptr;
+				deviceCreateInfo.pNext = &physicalDeviceFeatures2;
+			}
+			else {
+				for (VkBaseOutStructure* pTailChain = (VkBaseOutStructure*)&physicalDeviceFeatures2; pTailChain; pTailChain = pTailChain->pNext) {
+					if (!pTailChain->pNext) {
+						pTailChain->pNext = (VkBaseOutStructure*)&descriptorIndexingFeatures;
+						break;
+					}
+				}
+			}
+		}
+
 #if (defined(VK_USE_PLATFORM_IOS_MVK) || defined(VK_USE_PLATFORM_MACOS_MVK) || defined(VK_USE_PLATFORM_METAL_EXT)) && defined(VK_KHR_portability_subset)
 		// SRS - When running on iOS/macOS with MoltenVK and VK_KHR_portability_subset is defined and supported by the device, enable the extension
 		if (extensionSupported(VK_KHR_PORTABILITY_SUBSET_EXTENSION_NAME))

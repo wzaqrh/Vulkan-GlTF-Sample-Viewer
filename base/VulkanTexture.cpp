@@ -7,6 +7,7 @@
 */
 
 #include <VulkanTexture.h>
+#include "stb_image.h"
 
 namespace vks
 {
@@ -15,17 +16,22 @@ namespace vks
 		descriptor.sampler = sampler;
 		descriptor.imageView = view;
 		descriptor.imageLayout = imageLayout;
+
+		if (sRGBView != VK_NULL_HANDLE)
+		{
+			sRGBDescriptor.sampler = sampler;
+			sRGBDescriptor.imageView = sRGBView;
+			sRGBDescriptor.imageLayout = imageLayout;
+		}
 	}
 
 	void Texture::destroy()
 	{
-		vkDestroyImageView(device->logicalDevice, view, nullptr);
-		vkDestroyImage(device->logicalDevice, image, nullptr);
-		if (sampler)
-		{
-			vkDestroySampler(device->logicalDevice, sampler, nullptr);
-		}
-		vkFreeMemory(device->logicalDevice, deviceMemory, nullptr);
+		vkSafeDestroyImageView(device->logicalDevice, view, nullptr);
+		vkSafeDestroyImageView(device->logicalDevice, sRGBView, nullptr);
+		vkSafeDestroyImage(device->logicalDevice, image, nullptr);
+		vkSafeDestroySampler(device->logicalDevice, sampler, nullptr);
+		vkSafeFreeMemory(device->logicalDevice, deviceMemory, nullptr);
 	}
 
 	ktxResult Texture::loadKTXFile(std::string filename, ktxTexture **target)
@@ -64,7 +70,29 @@ namespace vks
 	* @param (Optional) forceLinear Force linear tiling (not advised, defaults to false)
 	*
 	*/
-	void Texture2D::loadFromFile(std::string filename, VkFormat format, vks::VulkanDevice *device, VkQueue copyQueue, VkImageUsageFlags imageUsageFlags, VkImageLayout imageLayout, bool forceLinear)
+	bool Texture2D::loadFromFile(std::string filename, 
+		VkFormat format,
+		vks::VulkanDevice* device,
+		VkQueue copyQueue,
+		VkImageUsageFlags imageUsageFlags,
+		VkImageLayout imageLayout,
+		bool forceLinear,
+		SamplerOption	samplerOpt)
+	{
+		std::string extension = vks::tools::getFileNameExtension(filename);
+		if (extension == "ktx" || extension == "ktx2") return loadFromKtxFile(filename, format, device, copyQueue, imageUsageFlags, imageLayout, forceLinear, samplerOpt);
+		else if (extension == "png") return loadFromPngFile(filename, format, device, copyQueue, imageUsageFlags, imageLayout, forceLinear, samplerOpt);
+		else return false;
+	}
+
+	bool Texture2D::loadFromKtxFile(std::string filename, 
+		VkFormat /*format*/, 
+		vks::VulkanDevice *device, 
+		VkQueue copyQueue, 
+		VkImageUsageFlags imageUsageFlags, 
+		VkImageLayout imageLayout, 
+		bool forceLinear, 
+		SamplerOption	samplerOpt)
 	{
 		ktxTexture* ktxTexture;
 		ktxResult result = loadKTXFile(filename, &ktxTexture);
@@ -74,6 +102,13 @@ namespace vks
 		width = ktxTexture->baseWidth;
 		height = ktxTexture->baseHeight;
 		mipLevels = ktxTexture->numLevels;
+
+		if (ktxTexture->classId != ktxTexture2_c) {
+			ktxTexture_Destroy(ktxTexture);
+			return false;
+		}
+		ktxTexture2* texture2 = reinterpret_cast<ktxTexture2*>(ktxTexture);
+		VkFormat format = static_cast<VkFormat>(texture2->vkFormat);
 
 		ktx_uint8_t *ktxTextureData = ktxTexture_GetData(ktxTexture);
 		ktx_size_t ktxTextureSize = ktxTexture_GetSize(ktxTexture);
@@ -296,12 +331,13 @@ namespace vks
 		samplerCreateInfo.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO;
 		samplerCreateInfo.magFilter = VK_FILTER_LINEAR;
 		samplerCreateInfo.minFilter = VK_FILTER_LINEAR;
-		samplerCreateInfo.mipmapMode = VK_SAMPLER_MIPMAP_MODE_LINEAR;
-		samplerCreateInfo.addressModeU = VK_SAMPLER_ADDRESS_MODE_REPEAT;
-		samplerCreateInfo.addressModeV = VK_SAMPLER_ADDRESS_MODE_REPEAT;
-		samplerCreateInfo.addressModeW = VK_SAMPLER_ADDRESS_MODE_REPEAT;
+		samplerCreateInfo.mipmapMode = samplerOpt.mipmapMode;
+		samplerCreateInfo.addressModeU = samplerOpt.addressModeU;
+		samplerCreateInfo.addressModeV = samplerOpt.addressModeV;
+		samplerCreateInfo.addressModeW = samplerOpt.addressModeW;
+		samplerCreateInfo.compareEnable = samplerOpt.compareEnable;
+		samplerCreateInfo.compareOp = samplerOpt.compareOp;
 		samplerCreateInfo.mipLodBias = 0.0f;
-		samplerCreateInfo.compareOp = VK_COMPARE_OP_NEVER;
 		samplerCreateInfo.minLod = 0.0f;
 		// Max level-of-detail should match mip level count
 		samplerCreateInfo.maxLod = (useStaging) ? (float)mipLevels : 0.0f;
@@ -328,8 +364,66 @@ namespace vks
 
 		// Update descriptor image info member that can be used for setting up descriptor sets
 		updateDescriptor();
+		return true;
 	}
 
+	static bool loadImageFromPng(const std::string& filename, std::vector<char>& buffer, VkDeviceSize& bufferSize, VkFormat format, int& texWidth, int& texHeight) {
+		int channels = 0;
+		int desiredChannels = 0;
+
+		// 确定用户指定的格式对应的通道数
+		switch (format) {
+		case VK_FORMAT_R8G8B8A8_UNORM:
+			desiredChannels = STBI_rgb_alpha; // 强制加载为 RGBA
+			break;
+		case VK_FORMAT_R8G8B8_UNORM:
+			desiredChannels = STBI_rgb; // 强制加载为 RGB
+			break;
+		case VK_FORMAT_R8G8_UNORM:
+			desiredChannels = 2; // 加载为 2 通道图像（灰度 + Alpha）
+			break;
+		case VK_FORMAT_R8_UNORM:
+			desiredChannels = STBI_grey; // 加载为单通道灰度图像
+			break;
+		default:
+			return false;
+		}
+
+		// 加载 PNG 图像数据
+		unsigned char* imageData = stbi_load(filename.c_str(), &texWidth, &texHeight, &channels, desiredChannels);
+		if (!imageData) return false; // 加载失败
+
+		// 计算缓冲区大小
+		bufferSize = texWidth * texHeight * desiredChannels;
+
+		// 分配缓冲区并拷贝图像数据
+		buffer.resize(bufferSize);
+		std::memcpy(buffer.data(), imageData, bufferSize);
+
+		// 释放 STB 图像内存
+		stbi_image_free(imageData);
+		return true; // 加载成功
+	}
+
+	bool Texture2D::loadFromPngFile(
+		std::string        filename,
+		VkFormat           format,
+		vks::VulkanDevice* device,
+		VkQueue            copyQueue,
+		VkImageUsageFlags  imageUsageFlags,
+		VkImageLayout      imageLayout,
+		bool               forceLinear,
+		SamplerOption	   samplerOpt)
+	{
+		std::vector<char> buffer;
+		VkDeviceSize bufferSize;
+		int texWidth, texHeight;
+		if (!loadImageFromPng(filename, buffer, bufferSize, format, texWidth, texHeight))
+			return false;
+
+		fromBuffer(buffer.data(), bufferSize, format, texWidth, texHeight, device, copyQueue, imageUsageFlags, imageLayout, false, samplerOpt);
+		return true;
+	}
 	/**
 	* Creates a 2D texture from a buffer
 	*
@@ -344,10 +438,28 @@ namespace vks
 	* @param (Optional) imageUsageFlags Usage flags for the texture's image (defaults to VK_IMAGE_USAGE_SAMPLED_BIT)
 	* @param (Optional) imageLayout Usage layout for the texture (defaults VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL)
 	*/
-	void Texture2D::fromBuffer(void* buffer, VkDeviceSize bufferSize, VkFormat format, uint32_t texWidth, uint32_t texHeight, vks::VulkanDevice *device, VkQueue copyQueue, VkFilter filter, VkImageUsageFlags imageUsageFlags, VkImageLayout imageLayout)
+/*
+		samplerCreateInfo.mipmapMode = VK_SAMPLER_MIPMAP_MODE_LINEAR;
+		samplerCreateInfo.addressModeU = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+		samplerCreateInfo.addressModeV = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+		samplerCreateInfo.addressModeW = VK_SAMPLER_ADDRESS_MODE_REPEAT;
+		samplerCreateInfo.mipLodBias = 0.0f;
+		samplerCreateInfo.compareOp = VK_COMPARE_OP_NEVER;
+		samplerCreateInfo.minLod = 0.0f;
+		samplerCreateInfo.maxLod = 0.0f;
+		samplerCreateInfo.maxAnisotropy = 1.0f;
+		samplerCreateInfo.anisotropyEnable = true;
+*/
+	void Texture2D::fromBuffer(void* buffer, VkDeviceSize bufferSize, 
+		VkFormat format, uint32_t texWidth, uint32_t texHeight, 
+		vks::VulkanDevice *device, VkQueue copyQueue, 
+		VkImageUsageFlags imageUsageFlags, VkImageLayout imageLayout, 
+		bool mutableFormat, 
+		SamplerOption samplerOpt)
 	{
 		assert(buffer);
 
+		this->format = format;
 		this->device = device;
 		width = texWidth;
 		height = texHeight;
@@ -414,6 +526,7 @@ namespace vks
 		{
 			imageCreateInfo.usage |= VK_IMAGE_USAGE_TRANSFER_DST_BIT;
 		}
+		imageCreateInfo.flags = mutableFormat ? VK_IMAGE_CREATE_MUTABLE_FORMAT_BIT : 0;
 		VK_CHECK_RESULT(vkCreateImage(device->logicalDevice, &imageCreateInfo, nullptr, &image));
 
 		vkGetImageMemoryRequirements(device->logicalDevice, image, &memReqs);
@@ -461,23 +574,31 @@ namespace vks
 		device->flushCommandBuffer(copyCmd, copyQueue);
 
 		// Clean up staging resources
-		vkDestroyBuffer(device->logicalDevice, stagingBuffer, nullptr);
 		vkFreeMemory(device->logicalDevice, stagingMemory, nullptr);
+		vkDestroyBuffer(device->logicalDevice, stagingBuffer, nullptr);
 
 		// Create sampler
 		VkSamplerCreateInfo samplerCreateInfo = {};
 		samplerCreateInfo.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO;
-		samplerCreateInfo.magFilter = filter;
-		samplerCreateInfo.minFilter = filter;
-		samplerCreateInfo.mipmapMode = VK_SAMPLER_MIPMAP_MODE_LINEAR;
-		samplerCreateInfo.addressModeU = VK_SAMPLER_ADDRESS_MODE_REPEAT;
-		samplerCreateInfo.addressModeV = VK_SAMPLER_ADDRESS_MODE_REPEAT;
-		samplerCreateInfo.addressModeW = VK_SAMPLER_ADDRESS_MODE_REPEAT;
+		samplerCreateInfo.magFilter = samplerOpt.magFilter;
+		samplerCreateInfo.minFilter = samplerOpt.minFilter;
+		samplerCreateInfo.mipmapMode = samplerOpt.mipmapMode;
+		samplerCreateInfo.addressModeU = samplerOpt.addressModeU;
+		samplerCreateInfo.addressModeV = samplerOpt.addressModeV;
+		samplerCreateInfo.addressModeW = samplerOpt.addressModeW;
+		samplerCreateInfo.compareEnable = samplerOpt.compareEnable;
+		samplerCreateInfo.compareOp = samplerOpt.compareOp;
+		if (samplerOpt.anisotropyEnable) {
+			samplerCreateInfo.maxAnisotropy = device->enabledFeatures.samplerAnisotropy ? device->properties.limits.maxSamplerAnisotropy : 1.0f;
+			samplerCreateInfo.anisotropyEnable = device->enabledFeatures.samplerAnisotropy;
+		}
+		else {
+			samplerCreateInfo.maxAnisotropy = 1.0f;
+			samplerCreateInfo.anisotropyEnable = false;
+		}
 		samplerCreateInfo.mipLodBias = 0.0f;
-		samplerCreateInfo.compareOp = VK_COMPARE_OP_NEVER;
 		samplerCreateInfo.minLod = 0.0f;
 		samplerCreateInfo.maxLod = 0.0f;
-		samplerCreateInfo.maxAnisotropy = 1.0f;
 		VK_CHECK_RESULT(vkCreateSampler(device->logicalDevice, &samplerCreateInfo, nullptr, &sampler));
 
 		// Create image view
@@ -490,6 +611,14 @@ namespace vks
 		viewCreateInfo.subresourceRange.levelCount = 1;
 		viewCreateInfo.image = image;
 		VK_CHECK_RESULT(vkCreateImageView(device->logicalDevice, &viewCreateInfo, nullptr, &view));
+
+		VkFormat sRGBFmt = vks::tools::formatConvertToSRGB(format);
+		if (mutableFormat && sRGBFmt != format)
+		{
+			viewCreateInfo.format = sRGBFmt;
+			this->sRGBFormat = sRGBFmt;
+			VK_CHECK_RESULT(vkCreateImageView(device->logicalDevice, &viewCreateInfo, nullptr, &sRGBView));
+		}
 
 		// Update descriptor image info member that can be used for setting up descriptor sets
 		updateDescriptor();
@@ -512,6 +641,7 @@ namespace vks
 		ktxResult result = loadKTXFile(filename, &ktxTexture);
 		assert(result == KTX_SUCCESS);
 
+		this->format = format;
 		this->device = device;
 		width = ktxTexture->baseWidth;
 		height = ktxTexture->baseHeight;
@@ -690,16 +820,25 @@ namespace vks
 	* @param (Optional) imageLayout Usage layout for the texture (defaults VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL)
 	*
 	*/
-	void TextureCubeMap::loadFromFile(std::string filename, VkFormat format, vks::VulkanDevice *device, VkQueue copyQueue, VkImageUsageFlags imageUsageFlags, VkImageLayout imageLayout)
+	bool TextureCubeMap::loadFromFile(std::string filename, VkFormat /*format*/, vks::VulkanDevice *device, VkQueue copyQueue, VkImageUsageFlags imageUsageFlags, VkImageLayout imageLayout)
 	{
 		ktxTexture* ktxTexture;
 		ktxResult result = loadKTXFile(filename, &ktxTexture);
+		if (result != KTX_SUCCESS) return false;
 		assert(result == KTX_SUCCESS);
 
+		this->format = format;
 		this->device = device;
 		width = ktxTexture->baseWidth;
 		height = ktxTexture->baseHeight;
 		mipLevels = ktxTexture->numLevels;
+
+		if (ktxTexture->classId != ktxTexture2_c) {
+			ktxTexture_Destroy(ktxTexture);
+			return false;
+		}
+		ktxTexture2* texture2 = reinterpret_cast<ktxTexture2*>(ktxTexture);
+		VkFormat format = static_cast<VkFormat>(texture2->vkFormat);
 
 		ktx_uint8_t *ktxTextureData = ktxTexture_GetData(ktxTexture);
 		ktx_size_t ktxTextureSize = ktxTexture_GetSize(ktxTexture);
@@ -864,6 +1003,7 @@ namespace vks
 
 		// Update descriptor image info member that can be used for setting up descriptor sets
 		updateDescriptor();
+		return true;
 	}
 
 }

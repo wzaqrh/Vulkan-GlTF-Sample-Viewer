@@ -1,10 +1,10 @@
 /*
- * Assorted Vulkan helper functions
- *
- * Copyright (C) 2016-2023 by Sascha Willems - www.saschawillems.de
- *
- * This code is licensed under the MIT license (MIT) (http://opensource.org/licenses/MIT)
- */
+* Assorted Vulkan helper functions
+*
+* Copyright (C) 2016 by Sascha Willems - www.saschawillems.de
+*
+* This code is licensed under the MIT license (MIT) (http://opensource.org/licenses/MIT)
+*/
 
 #pragma once
 
@@ -60,7 +60,22 @@
 }
 #endif
 
+
+#define vkSafeDestroySampler(device, sampler) if (sampler) { vkDestroySampler(device, sampler, nullptr); sampler = VK_NULL_HANDLE; }
+#define vkSafeDestroyImageView(device, view) if (view) { vkDestroyImageView(device, view, nullptr); view = VK_NULL_HANDLE; }
+#define vkSafeDestroyImage(device, image) if (image) { vkDestroyImage(device, image, nullptr); image = VK_NULL_HANDLE; }
+#define vkSafeDestroyBuffer(device, buffer) if (buffer) { vkDestroyBuffer(device, buffer, nullptr); buffer = VK_NULL_HANDLE; }
+#define vkSafeFreeMemory(device, memory) 	if (memory) { vkFreeMemory(device, memory, nullptr); memory = VK_NULL_HANDLE; }
+#define vkSafeFreeDescriptorSets(device, dsPool, dsCount, descriptorSet) if (descriptorSet) { vkFreeDescriptorSets(device, dsPool, dsCount, &descriptorSet); descriptorSet = VK_NULL_HANDLE; }
+#define vkSafeDestroyDescriptorSetLayout(device, dsLayout); if (dsLayout) { vkDestroyDescriptorSetLayout(device, dsLayout, nullptr); dsLayout = VK_NULL_HANDLE; }
+#define vkSafeDestroyPipelineLayout(device, pipeLayout) if (pipeLayout) { vkDestroyPipelineLayout(device, pipeLayout, nullptr); pipeLayout = VK_NULL_HANDLE; }
+#define vkSafeDestroyPipeline(device, pipe) if (pipe) { vkDestroyPipeline(device, pipe, nullptr); pipe = VK_NULL_HANDLE; }
+#define vkSafeDestroyRenderPass(device, renderPass) if (renderPass) { vkDestroyRenderPass(device, renderPass, nullptr); renderPass = VK_NULL_HANDLE; }
+#define vkSafeDestroyFramebuffer(device, framebuffer) if (framebuffer) { vkDestroyFramebuffer(device, framebuffer, nullptr); framebuffer = VK_NULL_HANDLE; }
+
 const std::string getAssetPath();
+const std::string getModelAssetPath();
+const std::string getEnviromentAssetPath();
 const std::string getShaderBasePath();
 
 namespace vks
@@ -89,6 +104,7 @@ namespace vks
 		VkBool32 formatIsFilterable(VkPhysicalDevice physicalDevice, VkFormat format, VkImageTiling tiling);
 		// Returns true if a given format has a stencil part
 		VkBool32 formatHasStencil(VkFormat format);
+		VkFormat formatConvertToSRGB(VkFormat format);
 
 		// Put an image memory barrier for setting an image layout on the sub resource into the given command buffer
 		void setImageLayout(
@@ -137,5 +153,7 @@ namespace vks
 
 		uint32_t alignedSize(uint32_t value, uint32_t alignment);
 		VkDeviceSize alignedVkSize(VkDeviceSize value, VkDeviceSize alignment);
+
+		std::string getFileNameExtension(const std::string& filename);
 	}
 }

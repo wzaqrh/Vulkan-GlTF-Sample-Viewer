@@ -1,11 +1,11 @@
 /*
-* Basic camera class providing a look-at and first-person camera
+* Basic camera class
 *
-* Copyright (C) 2016-2024 by Sascha Willems - www.saschawillems.de
+* Copyright (C) 2016 by Sascha Willems - www.saschawillems.de
 *
 * This code is licensed under the MIT license (MIT) (http://opensource.org/licenses/MIT)
 */
-
+#pragma once
 #define GLM_FORCE_RADIANS
 #define GLM_FORCE_DEPTH_ZERO_TO_ONE
 #include <glm/glm.hpp>
@@ -14,12 +14,14 @@
 
 class Camera
 {
-private:
+protected:
 	float fov;
 	float znear, zfar;
+	float aspect;
 
 	void updateViewMatrix()
 	{
+	#if 0
 		glm::mat4 currentMatrix = matrices.view;
 
 		glm::mat4 rotM = glm::mat4(1.0f);
@@ -49,12 +51,27 @@ private:
 		if (matrices.view != currentMatrix) {
 			updated = true;
 		}
+	#else
+		glm::mat4 currentMatrix = matrices.view;
+
+		glm::mat4 rotM = glm::mat4_cast(glm::conjugate(rotation));
+
+		glm::vec3 translation = position;
+		//if (flipY) translation.y *= -1.0f;
+		glm::mat4 transM = glm::translate(glm::mat4(1.0f), -translation);
+
+		matrices.view = rotM * transM;
+
+		viewPos = glm::vec4(position, 0.0f) * glm::vec4(-1.0f, 1.0f, -1.0f, 1.0f);
+
+		if (matrices.view != currentMatrix) updated = true;
+	#endif
 	};
 public:
 	enum CameraType { lookat, firstperson };
 	CameraType type = CameraType::lookat;
 
-	glm::vec3 rotation = glm::vec3();
+	glm::quat rotation = glm::quat();
 	glm::vec3 position = glm::vec3();
 	glm::vec4 viewPos = glm::vec4();
 
@@ -83,18 +100,22 @@ public:
 		return keys.left || keys.right || keys.up || keys.down;
 	}
 
-	float getNearClip() const {
-		return znear;
-	}
+	float getNearClip() const { return znear; }
+	float getFarClip() const { return zfar; }
+	float getFov() const { return fov; }
+	float getAspect() const { return aspect; }
 
-	float getFarClip() const {
-		return zfar;
-	}
+	glm::vec3 getPosition() const { return position; }
+	glm::vec3 getLookDirection() const { return glm::normalize(this->rotation * glm::vec3(0,0,-1)); }
+	glm::vec3 getForward() const { return glm::normalize(this->rotation * glm::vec3(0, 0, 1)); }
+	glm::vec3 getRight() const { return glm::normalize(this->rotation * glm::vec3(1, 0, 0)); }
+	glm::vec3 getUp() const { return glm::normalize(this->rotation * glm::vec3(0, 1, 0)); }
 
 	void setPerspective(float fov, float aspect, float znear, float zfar)
 	{
 		glm::mat4 currentMatrix = matrices.perspective;
 		this->fov = fov;
+		this->aspect = aspect;
 		this->znear = znear;
 		this->zfar = zfar;
 		matrices.perspective = glm::perspective(glm::radians(fov), aspect, znear, zfar);
@@ -124,15 +145,23 @@ public:
 		updateViewMatrix();
 	}
 
-	void setRotation(glm::vec3 rotation)
+	void setRotation(glm::quat rotation)
 	{
 		this->rotation = rotation;
 		updateViewMatrix();
 	}
 
+	void setRotation(glm::vec3 rotation)
+	{
+		// this->rotation = rotation;
+		this->rotation = glm::quat(rotation);
+		updateViewMatrix();
+	}
+
 	void rotate(glm::vec3 delta)
 	{
-		this->rotation += delta;
+		//this->rotation += delta;
+		this->rotation = glm::quat(delta) * this->rotation;
 		updateViewMatrix();
 	}
 
